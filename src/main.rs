@@ -11,16 +11,31 @@ use models::{TrackingMode, Watch};
 
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use std::io::{self, stdout};
 
+enum InputMode {
+    Normal,
+    Editing,
+}
+
+enum InputField {
+    Name,
+    Url,
+}
+
 struct App {
     watches: Vec<Watch>,
     state: ListState,
+    input_mode: InputMode,
+    input_field: InputField,
+    name_input: String,
+    url_input: String,
 }
 
 impl App {
@@ -57,6 +72,10 @@ impl App {
         let mut app = App {
             watches,
             state: ListState::default(),
+            input_mode: InputMode::Normal,
+            input_field: InputField::Name,
+            name_input: String::new(),
+            url_input: String::new(),
         };
         // Select the first item by default
         if !app.watches.is_empty() {
@@ -91,6 +110,26 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+    }
+
+    fn submit_watch(&mut self) {
+        if !self.name_input.trim().is_empty() && !self.url_input.trim().is_empty() {
+            let new_watch = Watch::new(
+                self.name_input.clone(),
+                self.url_input.clone(),
+                TrackingMode::FullPage, // Default for now
+            );
+            self.watches.push(new_watch);
+            self.state.select(Some(self.watches.len() - 1));
+        }
+        self.reset_input();
+    }
+
+    fn reset_input(&mut self) {
+        self.name_input.clear();
+        self.url_input.clear();
+        self.input_mode = InputMode::Normal;
+        self.input_field = InputField::Name;
     }
 }
 
@@ -143,8 +182,8 @@ async fn run_app(
                 .iter()
                 .map(|w| {
                     let lines = vec![
-                        ratatui::text::Line::from(format!("{} ({})", w.name, w.url)),
-                        ratatui::text::Line::from(format!("  Mode: {:?}", w.mode)),
+                        Line::from(format!("{} ({})", w.name, w.url)),
+                        Line::from(format!("  Mode: {:?}", w.mode)),
                     ];
                     ListItem::new(lines).style(Style::default().fg(Color::White))
                 })
@@ -156,22 +195,121 @@ async fn run_app(
 
             f.render_stateful_widget(list, chunks[0], &mut app.state);
 
-            let help = Paragraph::new("Press 'q' to quit. Use 'Up'/'Down' to navigate.")
+            let status_text = match app.input_mode {
+                InputMode::Normal => "Press 'q' to quit, 'n' to add watch, Up/Down to navigate.",
+                InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.",
+            };
+            let help = Paragraph::new(status_text)
                 .block(Block::default().borders(Borders::ALL).title("Status"));
             f.render_widget(help, chunks[1]);
+
+            // Render Input Popup if in Editing mode
+            if let InputMode::Editing = app.input_mode {
+                let block = Block::default().title("Add New Watch").borders(Borders::ALL);
+                let area = centered_rect(60, 25, size);
+                f.render_widget(Clear, area); // Clear the background
+                f.render_widget(block, area);
+
+                let popup_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .margin(2)
+                    .constraints(
+                        [
+                            Constraint::Length(3), // Name input
+                            Constraint::Length(3), // URL input
+                        ]
+                        .as_ref(),
+                    )
+                    .split(area);
+
+                let name_style = if let InputField::Name = app.input_field {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
+
+                let url_style = if let InputField::Url = app.input_field {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
+
+                let name_block = Block::default().title("Name").borders(Borders::ALL).style(name_style);
+                let name_text = Paragraph::new(app.name_input.clone()).block(name_block);
+                f.render_widget(name_text, popup_chunks[0]);
+
+                let url_block = Block::default().title("URL").borders(Borders::ALL).style(url_style);
+                let url_text = Paragraph::new(app.url_input.clone()).block(url_block);
+                f.render_widget(url_text, popup_chunks[1]);
+            }
         })?;
 
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Down => app.next(),
-                        KeyCode::Up => app.previous(),
-                        _ => {}
+                    match app.input_mode {
+                        InputMode::Normal => match key.code {
+                            KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Char('n') => {
+                                app.input_mode = InputMode::Editing;
+                                app.input_field = InputField::Name;
+                            }
+                            KeyCode::Down => app.next(),
+                            KeyCode::Up => app.previous(),
+                            _ => {}
+                        },
+                        InputMode::Editing => match key.code {
+                            KeyCode::Esc => app.reset_input(),
+                            KeyCode::Enter => {
+                                match app.input_field {
+                                    InputField::Name => app.input_field = InputField::Url,
+                                    InputField::Url => app.submit_watch(),
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                match app.input_field {
+                                    InputField::Name => app.name_input.push(c),
+                                    InputField::Url => app.url_input.push(c),
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                match app.input_field {
+                                    InputField::Name => { app.name_input.pop(); },
+                                    InputField::Url => { app.url_input.pop(); },
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/// Helper function to create a centered rect using up certain percentage of the available rect `r`
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(popup_layout[1])[1]
 }

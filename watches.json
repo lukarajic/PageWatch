@@ -1,0 +1,55 @@
+[
+  {
+    "id": "f94017ad-0bd7-4df6-8615-e0b76a1b0c9b",
+    "name": "Competitor Price",
+    "url": "https://example.com/product",
+    "mode": {
+      "Price": {
+        "selector": null
+      }
+    },
+    "interval_seconds": 3600,
+    "last_checked": null,
+    "last_success": null,
+    "last_error": null,
+    "last_value": null
+  },
+  {
+    "id": "ac3a2a3a-867b-4dde-b290-a8b6bfaf5cf4",
+    "name": "My Portfolio",
+    "url": "https://mysite.com",
+    "mode": "FullPage",
+    "interval_seconds": 3600,
+    "last_checked": null,
+    "last_success": null,
+    "last_error": null,
+    "last_value": null
+  },
+  {
+    "id": "2800247f-90d3-40c5-93c0-bc360b82b86f",
+    "name": "GPU Stock",
+    "url": "https://store.com/gpu",
+    "mode": {
+      "Availability": {
+        "in_stock_keywords": [],
+        "out_of_stock_keywords": []
+      }
+    },
+    "interval_seconds": 3600,
+    "last_checked": null,
+    "last_success": null,
+    "last_error": null,
+    "last_value": null
+  },
+  {
+    "id": "bf5a1ff7-01a9-472d-81f6-2872bdcf2a9d",
+    "name": "Body Wash",
+    "url": "https://www.amazon.ca/Ivory-Gentle-Coconut-Water-Scent/dp/B09M7QMB8Y/ref=sr_1_1_sspa?crid=35P5WC1FC5JKH&dib=eyJ2IjoiMSJ9.c1pEEeelziwLzXRGtecInprFomE-NWACjvtkRqrOJKidhyTI-Y7t7mrvjIto504A9QyoWEbG4d3Jo3uk5BnU1Kot5agcE7udQAsmG3hdVywjn6O0GcN01tN9P-GqfC61lICJ-Welanu04xoKJ7d2EKoDrEKwEKrksxfIV8YFLZ6t9zjZYR5Or_AY_TlbH4aWPl2kzVRV-lPoRybC8VdMl28oUfw3UPD-SDLK1bJIDTw5m7JGYsY75h92NoZe-e4U3FaeIGYS9JDYQSoYTSauTk-pNi6U0jO6k76wc2Xat6w.bito5jY_SkOHZL95J2ucqbTWQJsJqZ2lth3UMc-HOms&dib_tag=se&keywords=body%2Bwash&qid=1768061472&sprefix=body%2Bwas%2Caps%2C142&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1",
+    "mode": "FullPage",
+    "interval_seconds": 3600,
+    "last_checked": null,
+    "last_success": null,
+    "last_error": null,
+    "last_value": null
+  }
+]
