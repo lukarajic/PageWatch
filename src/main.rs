@@ -6,6 +6,7 @@ use crossterm::{
 };
 
 mod models;
+mod storage;
 use models::{TrackingMode, Watch};
 
 use ratatui::{
@@ -24,8 +25,12 @@ struct App {
 
 impl App {
     fn new() -> App {
-        let mut app = App {
-            watches: vec![
+        // Try to load existing watches
+        let loaded_watches = storage::load_watches().unwrap_or_else(|_| Vec::new());
+
+        // If no watches exist (first run or file missing), use mock data
+        let watches = if loaded_watches.is_empty() {
+            vec![
                 Watch::new(
                     "Competitor Price".to_string(),
                     "https://example.com/product".to_string(),
@@ -44,7 +49,13 @@ impl App {
                         out_of_stock_keywords: vec![],
                     },
                 ),
-            ],
+            ]
+        } else {
+            loaded_watches
+        };
+
+        let mut app = App {
+            watches,
             state: ListState::default(),
         };
         // Select the first item by default
@@ -102,6 +113,11 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+
+    // Save state
+    if let Err(e) = storage::save_watches(&app.watches) {
+        eprintln!("Failed to save watches: {}", e);
+    }
 
     if let Err(err) = res {
         println!("{:?}", err);
