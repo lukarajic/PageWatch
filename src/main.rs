@@ -7,6 +7,7 @@ use crossterm::{
 
 mod models;
 mod storage;
+mod checker;
 use models::{TrackingMode, Watch};
 
 use ratatui::{
@@ -36,6 +37,7 @@ struct App {
     input_field: InputField,
     name_input: String,
     url_input: String,
+    is_checking: bool,
 }
 
 impl App {
@@ -76,6 +78,7 @@ impl App {
             input_field: InputField::Name,
             name_input: String::new(),
             url_input: String::new(),
+            is_checking: false,
         };
         // Select the first item by default
         if !app.watches.is_empty() {
@@ -181,10 +184,37 @@ async fn run_app(
                 .watches
                 .iter()
                 .map(|w| {
-                    let lines = vec![
-                        Line::from(format!("{} ({})", w.name, w.url)),
+                    let mut lines = vec![
+                        Line::from(vec![
+                            Span::styled(&w.name, Style::default().add_modifier(Modifier::BOLD)),
+                            Span::raw(format!(" ({})", w.url)),
+                        ]),
                         Line::from(format!("  Mode: {:?}", w.mode)),
                     ];
+
+                    if let Some(last) = w.last_checked {
+                        lines.push(Line::from(format!("  Last checked: {}", last.format("%Y-%m-%d %H:%M:%S"))));
+                    }
+
+                    if let Some(val) = &w.last_value {
+                        let snippet = if val.chars().count() > 50 {
+                            format!("{}...", val.chars().take(50).collect::<String>())
+                        } else {
+                            val.clone()
+                        };
+                        lines.push(Line::from(vec![
+                            Span::raw("  Value: "),
+                            Span::styled(snippet, Style::default().fg(Color::Cyan)),
+                        ]));
+                    }
+
+                    if let Some(err) = &w.last_error {
+                        lines.push(Line::from(vec![
+                            Span::raw("  Error: "),
+                            Span::styled(err, Style::default().fg(Color::Red)),
+                        ]));
+                    }
+
                     ListItem::new(lines).style(Style::default().fg(Color::White))
                 })
                 .collect();
@@ -195,9 +225,13 @@ async fn run_app(
 
             f.render_stateful_widget(list, chunks[0], &mut app.state);
 
-            let status_text = match app.input_mode {
-                InputMode::Normal => "Press 'q' to quit, 'n' to add watch, Up/Down to navigate.",
-                InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.",
+            let status_text = if app.is_checking {
+                "Checking watch..."
+            } else {
+                match app.input_mode {
+                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check selected, Up/Down to navigate.",
+                    InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.",
+                }
             };
             let help = Paragraph::new(status_text)
                 .block(Block::default().borders(Borders::ALL).title("Status"));
@@ -253,6 +287,17 @@ async fn run_app(
                             KeyCode::Char('n') => {
                                 app.input_mode = InputMode::Editing;
                                 app.input_field = InputField::Name;
+                            }
+                            KeyCode::Char('c') => {
+                                if let Some(i) = app.state.selected() {
+                                    app.is_checking = true;
+                                    let mut watch = app.watches[i].clone();
+                                    
+                                    // Await the check directly since we are in an async run_app
+                                    let _ = checker::check_watch(&mut watch).await;
+                                    app.watches[i] = watch;
+                                    app.is_checking = false;
+                                }
                             }
                             KeyCode::Down => app.next(),
                             KeyCode::Up => app.previous(),
