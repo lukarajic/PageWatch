@@ -229,7 +229,7 @@ async fn run_app(
                 "Checking watch..."
             } else {
                 match app.input_mode {
-                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check selected, Up/Down to navigate.",
+                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check, 'd' to delete, Up/Down to navigate.",
                     InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.",
                 }
             };
@@ -297,6 +297,16 @@ async fn run_app(
                                     let _ = checker::check_watch(&mut watch).await;
                                     app.watches[i] = watch;
                                     app.is_checking = false;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(i) = app.state.selected() {
+                                    app.watches.remove(i);
+                                    if app.watches.is_empty() {
+                                        app.state.select(None);
+                                    } else if i >= app.watches.len() {
+                                        app.state.select(Some(app.watches.len() - 1));
+                                    }
                                 }
                             }
                             KeyCode::Down => app.next(),
