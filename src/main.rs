@@ -28,6 +28,7 @@ enum InputMode {
 enum InputField {
     Name,
     Url,
+    Mode,
 }
 
 use tokio::sync::mpsc;
@@ -39,6 +40,7 @@ struct App {
     input_field: InputField,
     name_input: String,
     url_input: String,
+    mode_selection: usize,
     pending_checks: usize,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
@@ -84,6 +86,7 @@ impl App {
             input_field: InputField::Name,
             name_input: String::new(),
             url_input: String::new(),
+            mode_selection: 0,
             pending_checks: 0,
             tx,
             rx,
@@ -125,10 +128,17 @@ impl App {
 
     fn submit_watch(&mut self) {
         if !self.name_input.trim().is_empty() && !self.url_input.trim().is_empty() {
+            let mode = match self.mode_selection {
+                1 => TrackingMode::Price { selector: None },
+                2 => TrackingMode::Availability { in_stock_keywords: vec![], out_of_stock_keywords: vec![] },
+                3 => TrackingMode::Keyword { keywords: vec![] },
+                4 => TrackingMode::HtmlSection { selector: String::new() },
+                _ => TrackingMode::FullPage,
+            };
             let new_watch = Watch::new(
                 self.name_input.clone(),
                 self.url_input.clone(),
-                TrackingMode::FullPage, // Default for now
+                mode,
             );
             self.watches.push(new_watch);
             self.state.select(Some(self.watches.len() - 1));
@@ -139,6 +149,7 @@ impl App {
     fn reset_input(&mut self) {
         self.name_input.clear();
         self.url_input.clear();
+        self.mode_selection = 0;
         self.input_mode = InputMode::Normal;
         self.input_field = InputField::Name;
     }
@@ -256,7 +267,7 @@ async fn run_app(
             // Render Input Popup if in Editing mode
             if let InputMode::Editing = app.input_mode {
                 let block = Block::default().title("Add New Watch").borders(Borders::ALL);
-                let area = centered_rect(60, 25, size);
+                let area = centered_rect(60, 40, size);
                 f.render_widget(Clear, area); // Clear the background
                 f.render_widget(block, area);
 
@@ -267,6 +278,7 @@ async fn run_app(
                         [
                             Constraint::Length(3), // Name input
                             Constraint::Length(3), // URL input
+                            Constraint::Min(5),    // Mode selection
                         ]
                         .as_ref(),
                     )
@@ -284,6 +296,12 @@ async fn run_app(
                     Style::default()
                 };
 
+                let mode_style = if let InputField::Mode = app.input_field {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                };
+
                 let name_block = Block::default().title("Name").borders(Borders::ALL).style(name_style);
                 let name_text = Paragraph::new(app.name_input.clone()).block(name_block);
                 f.render_widget(name_text, popup_chunks[0]);
@@ -291,6 +309,20 @@ async fn run_app(
                 let url_block = Block::default().title("URL").borders(Borders::ALL).style(url_style);
                 let url_text = Paragraph::new(app.url_input.clone()).block(url_block);
                 f.render_widget(url_text, popup_chunks[1]);
+
+                let modes = vec!["Full Page", "Price", "Availability", "Keyword", "HTML Section"];
+                let mode_items: Vec<ListItem> = modes.iter().enumerate().map(|(i, m)| {
+                    let style = if i == app.mode_selection {
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(format!("  {}", m)).style(style)
+                }).collect();
+
+                let mode_list = List::new(mode_items)
+                    .block(Block::default().title("Tracking Mode").borders(Borders::ALL).style(mode_style));
+                f.render_widget(mode_list, popup_chunks[2]);
             }
         })?;
 
@@ -335,19 +367,32 @@ async fn run_app(
                             KeyCode::Enter => {
                                 match app.input_field {
                                     InputField::Name => app.input_field = InputField::Url,
-                                    InputField::Url => app.submit_watch(),
+                                    InputField::Url => app.input_field = InputField::Mode,
+                                    InputField::Mode => app.submit_watch(),
+                                }
+                            }
+                            KeyCode::Down if matches!(app.input_field, InputField::Mode) => {
+                                app.mode_selection = (app.mode_selection + 1) % 5;
+                            }
+                            KeyCode::Up if matches!(app.input_field, InputField::Mode) => {
+                                if app.mode_selection == 0 {
+                                    app.mode_selection = 4;
+                                } else {
+                                    app.mode_selection -= 1;
                                 }
                             }
                             KeyCode::Char(c) => {
                                 match app.input_field {
                                     InputField::Name => app.name_input.push(c),
                                     InputField::Url => app.url_input.push(c),
+                                    InputField::Mode => {}
                                 }
                             }
                             KeyCode::Backspace => {
                                 match app.input_field {
                                     InputField::Name => { app.name_input.pop(); },
                                     InputField::Url => { app.url_input.pop(); },
+                                    InputField::Mode => {}
                                 }
                             }
                             _ => {}
