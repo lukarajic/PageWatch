@@ -30,6 +30,8 @@ enum InputField {
     Url,
 }
 
+use tokio::sync::mpsc;
+
 struct App {
     watches: Vec<Watch>,
     state: ListState,
@@ -37,7 +39,9 @@ struct App {
     input_field: InputField,
     name_input: String,
     url_input: String,
-    is_checking: bool,
+    pending_checks: usize,
+    tx: mpsc::UnboundedSender<(usize, Watch)>,
+    rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
 
 impl App {
@@ -71,6 +75,8 @@ impl App {
             loaded_watches
         };
 
+        let (tx, rx) = mpsc::unbounded_channel();
+
         let mut app = App {
             watches,
             state: ListState::default(),
@@ -78,7 +84,9 @@ impl App {
             input_field: InputField::Name,
             name_input: String::new(),
             url_input: String::new(),
-            is_checking: false,
+            pending_checks: 0,
+            tx,
+            rx,
         };
         // Select the first item by default
         if !app.watches.is_empty() {
@@ -173,6 +181,14 @@ async fn run_app(
     app: &mut App,
 ) -> Result<()> {
     loop {
+        // Handle background task results
+        while let Ok((idx, watch)) = app.rx.try_recv() {
+            if idx < app.watches.len() {
+                app.watches[idx] = watch;
+            }
+            app.pending_checks = app.pending_checks.saturating_sub(1);
+        }
+
         terminal.draw(|f| {
             let size = f.area();
             let chunks = Layout::default()
@@ -225,12 +241,12 @@ async fn run_app(
 
             f.render_stateful_widget(list, chunks[0], &mut app.state);
 
-            let status_text = if app.is_checking {
-                "Checking watch..."
+            let status_text = if app.pending_checks > 0 {
+                format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks)
             } else {
                 match app.input_mode {
-                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check, 'd' to delete, Up/Down to navigate.",
-                    InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.",
+                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check, 'd' to delete, Up/Down to navigate.".to_string(),
+                    InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
                 }
             };
             let help = Paragraph::new(status_text)
@@ -290,13 +306,14 @@ async fn run_app(
                             }
                             KeyCode::Char('c') => {
                                 if let Some(i) = app.state.selected() {
-                                    app.is_checking = true;
+                                    app.pending_checks += 1;
                                     let mut watch = app.watches[i].clone();
+                                    let tx = app.tx.clone();
                                     
-                                    // Await the check directly since we are in an async run_app
-                                    let _ = checker::check_watch(&mut watch).await;
-                                    app.watches[i] = watch;
-                                    app.is_checking = false;
+                                    tokio::spawn(async move {
+                                        let _ = checker::check_watch(&mut watch).await;
+                                        let _ = tx.send((i, watch));
+                                    });
                                 }
                             }
                             KeyCode::Char('d') => {
