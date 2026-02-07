@@ -8,6 +8,7 @@ anyhow = "1.0.100"
 chrono = { version = "0.4.43", features = ["serde"] }
 crossterm = "0.29.0"
 ratatui = "0.30.0"
+regex = "1.10"
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate"] }
 scraper = "0.22"
 serde = { version = "1.0.228", features = ["derive"] }

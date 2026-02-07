@@ -10,6 +10,7 @@ dependencies = [
  "chrono",
  "crossterm",
  "ratatui",
+ "regex",
  "reqwest",
  "scraper",
  "serde",
