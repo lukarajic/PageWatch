@@ -42,6 +42,7 @@ struct App {
     url_input: String,
     mode_selection: usize,
     pending_checks: usize,
+    last_tick: std::time::Instant,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
@@ -88,6 +89,7 @@ impl App {
             url_input: String::new(),
             mode_selection: 0,
             pending_checks: 0,
+            last_tick: std::time::Instant::now(),
             tx,
             rx,
         };
@@ -198,6 +200,29 @@ async fn run_app(
                 app.watches[idx] = watch;
             }
             app.pending_checks = app.pending_checks.saturating_sub(1);
+        }
+
+        // Periodic automatic checks (every 5 seconds)
+        if app.last_tick.elapsed() >= std::time::Duration::from_secs(5) {
+            app.last_tick = std::time::Instant::now();
+            let now = chrono::Utc::now();
+            
+            for (i, watch) in app.watches.iter().enumerate() {
+                let should_check = match watch.last_checked {
+                    Some(last) => (now - last).num_seconds() >= watch.interval_seconds as i64,
+                    None => true,
+                };
+
+                if should_check {
+                    app.pending_checks += 1;
+                    let mut watch_clone = watch.clone();
+                    let tx = app.tx.clone();
+                    tokio::spawn(async move {
+                        let _ = checker::check_watch(&mut watch_clone).await;
+                        let _ = tx.send((i, watch_clone));
+                    });
+                }
+            }
         }
 
         terminal.draw(|f| {
