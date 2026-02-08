@@ -112,6 +112,9 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        if i < self.watches.len() {
+            self.watches[i].has_unread_change = false;
+        }
     }
 
     fn previous(&mut self) {
@@ -126,6 +129,9 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        if i < self.watches.len() {
+            self.watches[i].has_unread_change = false;
+        }
     }
 
     fn submit_watch(&mut self) {
@@ -236,11 +242,18 @@ async fn run_app(
                 .watches
                 .iter()
                 .map(|w| {
+                    let mut title_spans = vec![
+                        Span::styled(&w.name, Style::default().add_modifier(Modifier::BOLD)),
+                        Span::raw(format!(" ({})", w.url)),
+                    ];
+
+                    if w.has_unread_change {
+                        title_spans.push(Span::raw(" "));
+                        title_spans.push(Span::styled("● NEW", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+                    }
+
                     let mut lines = vec![
-                        Line::from(vec![
-                            Span::styled(&w.name, Style::default().add_modifier(Modifier::BOLD)),
-                            Span::raw(format!(" ({})", w.url)),
-                        ]),
+                        Line::from(title_spans),
                         Line::from(format!("  Mode: {:?}", w.mode)),
                     ];
 

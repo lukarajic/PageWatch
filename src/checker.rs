@@ -64,6 +64,15 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
         }
     };
 
+    if let Some(old_val) = &watch.last_value {
+        if old_val != &extracted_value {
+            watch.has_unread_change = true;
+        }
+    } else {
+        // First successful fetch is technically a "change" from nothing
+        watch.has_unread_change = true;
+    }
+
     watch.last_value = Some(extracted_value);
     watch.last_success = Some(Utc::now());
     watch.last_error = None;
