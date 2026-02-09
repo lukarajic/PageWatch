@@ -41,6 +41,7 @@ struct App {
     name_input: String,
     url_input: String,
     mode_selection: usize,
+    editing_watch_index: Option<usize>,
     pending_checks: usize,
     last_tick: std::time::Instant,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
@@ -88,6 +89,7 @@ impl App {
             name_input: String::new(),
             url_input: String::new(),
             mode_selection: 0,
+            editing_watch_index: None,
             pending_checks: 0,
             last_tick: std::time::Instant::now(),
             tx,
@@ -143,13 +145,26 @@ impl App {
                 4 => TrackingMode::HtmlSection { selector: String::new() },
                 _ => TrackingMode::FullPage,
             };
-            let new_watch = Watch::new(
-                self.name_input.clone(),
-                self.url_input.clone(),
-                mode,
-            );
-            self.watches.push(new_watch);
-            self.state.select(Some(self.watches.len() - 1));
+
+            if let Some(index) = self.editing_watch_index {
+                // Edit existing watch
+                if index < self.watches.len() {
+                    let watch = &mut self.watches[index];
+                    watch.name = self.name_input.clone();
+                    watch.url = self.url_input.clone();
+                    watch.mode = mode;
+                    // Reset status on significant change? For now, keep history.
+                }
+            } else {
+                // Create new watch
+                let new_watch = Watch::new(
+                    self.name_input.clone(),
+                    self.url_input.clone(),
+                    mode,
+                );
+                self.watches.push(new_watch);
+                self.state.select(Some(self.watches.len() - 1));
+            }
         }
         self.reset_input();
     }
@@ -158,6 +173,7 @@ impl App {
         self.name_input.clear();
         self.url_input.clear();
         self.mode_selection = 0;
+        self.editing_watch_index = None;
         self.input_mode = InputMode::Normal;
         self.input_field = InputField::Name;
     }
@@ -294,7 +310,7 @@ async fn run_app(
                 format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks)
             } else {
                 match app.input_mode {
-                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'c' to check, 'd' to delete, Up/Down to navigate.".to_string(),
+                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, Up/Down to navigate.".to_string(),
                     InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
                 }
             };
@@ -304,7 +320,8 @@ async fn run_app(
 
             // Render Input Popup if in Editing mode
             if let InputMode::Editing = app.input_mode {
-                let block = Block::default().title("Add New Watch").borders(Borders::ALL);
+                let title = if app.editing_watch_index.is_some() { "Edit Watch" } else { "Add New Watch" };
+                let block = Block::default().title(title).borders(Borders::ALL);
                 let area = centered_rect(60, 40, size);
                 f.render_widget(Clear, area); // Clear the background
                 f.render_widget(block, area);
@@ -373,6 +390,29 @@ async fn run_app(
                             KeyCode::Char('n') => {
                                 app.input_mode = InputMode::Editing;
                                 app.input_field = InputField::Name;
+                                app.editing_watch_index = None;
+                                app.name_input.clear();
+                                app.url_input.clear();
+                                app.mode_selection = 0;
+                            }
+                            KeyCode::Char('e') => {
+                                if let Some(i) = app.state.selected() {
+                                    if i < app.watches.len() {
+                                        let watch = &app.watches[i];
+                                        app.input_mode = InputMode::Editing;
+                                        app.input_field = InputField::Name;
+                                        app.editing_watch_index = Some(i);
+                                        app.name_input = watch.name.clone();
+                                        app.url_input = watch.url.clone();
+                                        app.mode_selection = match watch.mode {
+                                            TrackingMode::FullPage => 0,
+                                            TrackingMode::Price { .. } => 1,
+                                            TrackingMode::Availability { .. } => 2,
+                                            TrackingMode::Keyword { .. } => 3,
+                                            TrackingMode::HtmlSection { .. } => 4,
+                                        };
+                                    }
+                                }
                             }
                             KeyCode::Char('c') => {
                                 if let Some(i) = app.state.selected() {

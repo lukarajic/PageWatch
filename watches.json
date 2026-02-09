@@ -1,7 +1,7 @@
 [
   {
     "id": "6b4451a5-cc70-4af8-9693-69199b5ae3dc",
-    "name": "Body Wash",
+    "name": "Ivory Body Wash",
     "url": "https://www.amazon.ca/Ivory-Gentle-Exfoliating-Notes-Jojoba/dp/B09M7PB3X4/ref=sr_1_1_sspa?crid=1022MVFUWAHMU&dib=eyJ2IjoiMSJ9.c1pEEeelziwLzXRGtecInteQ0zLf-SVyJo8_0onL5wLradTHlT_3b8HKrWwFMM8N_A91pA92fd2zwSZWCJeIF_P-Gi9JwBs1BRQrulpXEt23am-N5yg-MbQDTy7z6FMpySlDSvZc7Co-nIQQdDXFT0tBe9WBSXbYA9FWmMOYzSdSwnXBSDf5ed5zriHMf_TmJQjpJCllKSTMCDVJqkf_cKiijEyzLytmozmWZDXndbE28CoSXewL4wfGtsSd1pVnlvwu3lN5uWY0estE3WU24_ZBUtrf7JX0HWp3gL6uCyE.MDExH-5zc7MaSyKCKbsqoCzg-9krE94s0b2BCYyBwmc&dib_tag=se&keywords=body%2Bwash&qid=1770571476&sprefix=body%2Bwas%2Caps%2C219&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1",
     "mode": {
       "Price": {
@@ -9,8 +9,8 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-08T17:25:07.018173Z",
-    "last_success": "2026-02-08T17:25:09.075548Z",
+    "last_checked": "2026-02-08T17:31:00.720800Z",
+    "last_success": "2026-02-08T17:31:03.338260Z",
     "last_error": null,
     "last_value": "$8.48",
     "has_unread_change": true
