@@ -283,10 +283,27 @@ async fn run_app(
                         } else {
                             val.clone()
                         };
-                        lines.push(Line::from(vec![
-                            Span::raw("  Value: "),
-                            Span::styled(snippet, Style::default().fg(Color::Cyan)),
-                        ]));
+
+                        if w.has_unread_change && w.previous_value.is_some() {
+                            let prev_val = w.previous_value.as_ref().unwrap();
+                            let prev_snippet = if prev_val.chars().count() > 50 {
+                                format!("{}...", prev_val.chars().take(50).collect::<String>())
+                            } else {
+                                prev_val.clone()
+                            };
+
+                            lines.push(Line::from(vec![
+                                Span::raw("  Change: "),
+                                Span::styled(prev_snippet, Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)),
+                                Span::raw(" -> "),
+                                Span::styled(snippet, Style::default().fg(Color::Green)),
+                            ]));
+                        } else {
+                            lines.push(Line::from(vec![
+                                Span::raw("  Value: "),
+                                Span::styled(snippet, Style::default().fg(Color::Cyan)),
+                            ]));
+                        }
                     }
 
                     if let Some(err) = &w.last_error {

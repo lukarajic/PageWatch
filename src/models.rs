@@ -48,6 +48,8 @@ pub struct Watch {
     
     /// The last value we successfully extracted, used for comparison
     pub last_value: Option<String>,
+    /// The value from the check before the last one
+    pub previous_value: Option<String>,
     
     /// Whether there is a change that hasn't been "seen" by the user yet
     pub has_unread_change: bool,
@@ -65,6 +67,7 @@ impl Watch {
             last_success: None,
             last_error: None,
             last_value: None,
+            previous_value: None,
             has_unread_change: false,
         }
     }

@@ -66,6 +66,7 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
 
     if let Some(old_val) = &watch.last_value {
         if old_val != &extracted_value {
+            watch.previous_value = Some(old_val.clone());
             watch.has_unread_change = true;
         }
     } else {

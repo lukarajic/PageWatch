@@ -9,10 +9,11 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-08T17:31:00.720800Z",
-    "last_success": "2026-02-08T17:31:03.338260Z",
+    "last_checked": "2026-02-10T01:12:26.031110Z",
+    "last_success": "2026-02-10T01:12:28.386298Z",
     "last_error": null,
     "last_value": "$8.48",
+    "previous_value": null,
     "has_unread_change": true
   }
 ]
