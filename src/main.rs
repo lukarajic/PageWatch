@@ -23,6 +23,7 @@ use std::io::{self, stdout};
 enum InputMode {
     Normal,
     Editing,
+    Details,
 }
 
 enum InputField {
@@ -44,6 +45,7 @@ struct App {
     editing_watch_index: Option<usize>,
     pending_checks: usize,
     last_tick: std::time::Instant,
+    scroll: u16,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
@@ -92,6 +94,7 @@ impl App {
             editing_watch_index: None,
             pending_checks: 0,
             last_tick: std::time::Instant::now(),
+            scroll: 0,
             tx,
             rx,
         };
@@ -327,13 +330,61 @@ async fn run_app(
                 format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks)
             } else {
                 match app.input_mode {
-                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, Up/Down to navigate.".to_string(),
+                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, 'Enter' for details.".to_string(),
                     InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
+                    InputMode::Details => "Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(),
                 }
             };
             let help = Paragraph::new(status_text)
                 .block(Block::default().borders(Borders::ALL).title("Status"));
             f.render_widget(help, chunks[1]);
+
+            // Render Details View
+            if let InputMode::Details = app.input_mode {
+                if let Some(i) = app.state.selected() {
+                    let w = &app.watches[i];
+                    let area = centered_rect(80, 80, size);
+                    f.render_widget(Clear, area);
+                    
+                    let block = Block::default()
+                        .title(format!(" Details: {} ", w.name))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan));
+                    
+                    let mut details_text = vec![
+                        Line::from(vec![
+                            Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::raw(&w.url),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Mode: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::raw(format!("{:?}", w.mode)),
+                        ]),
+                        Line::from(""),
+                        Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(),
+                        Line::from("----------------------"),
+                    ];
+
+                    if let Some(val) = &w.last_value {
+                        details_text.push(Line::from(val.clone()));
+                    } else {
+                        details_text.push(Line::from("No data collected yet."));
+                    }
+
+                    if let Some(err) = &w.last_error {
+                        details_text.push(Line::from(""));
+                        details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into());
+                        details_text.push(Line::from(err.clone()));
+                    }
+
+                    let details_paragraph = Paragraph::new(details_text)
+                        .block(block)
+                        .wrap(ratatui::widgets::Wrap { trim: true })
+                        .scroll((app.scroll, 0));
+                    
+                    f.render_widget(details_paragraph, area);
+                }
+            }
 
             // Render Input Popup if in Editing mode
             if let InputMode::Editing = app.input_mode {
@@ -404,6 +455,12 @@ async fn run_app(
                     match app.input_mode {
                         InputMode::Normal => match key.code {
                             KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Enter => {
+                                if app.state.selected().is_some() {
+                                    app.input_mode = InputMode::Details;
+                                    app.scroll = 0;
+                                }
+                            }
                             KeyCode::Char('n') => {
                                 app.input_mode = InputMode::Editing;
                                 app.input_field = InputField::Name;
@@ -455,6 +512,12 @@ async fn run_app(
                             }
                             KeyCode::Down => app.next(),
                             KeyCode::Up => app.previous(),
+                            _ => {}
+                        },
+                        InputMode::Details => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => app.input_mode = InputMode::Normal,
+                            KeyCode::Down => app.scroll = app.scroll.saturating_add(1),
+                            KeyCode::Up => app.scroll = app.scroll.saturating_sub(1),
                             _ => {}
                         },
                         InputMode::Editing => match key.code {
