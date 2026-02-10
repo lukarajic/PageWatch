@@ -59,6 +59,33 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
                 "Price not found".to_string()
             }
         }
+        TrackingMode::Availability { in_stock_keywords, out_of_stock_keywords } => {
+            let body_selector = Selector::parse("body").unwrap();
+            let text = document.select(&body_selector)
+                .next()
+                .map(|el| el.text().collect::<Vec<_>>().join(" ").to_lowercase())
+                .unwrap_or_else(|| html_content.to_lowercase());
+
+            let in_stock = if in_stock_keywords.is_empty() {
+                vec!["in stock", "available", "add to cart", "buy now"]
+            } else {
+                in_stock_keywords.iter().map(|s| s.as_str()).collect()
+            };
+
+            let out_of_stock = if out_of_stock_keywords.is_empty() {
+                vec!["out of stock", "sold out", "currently unavailable", "not available"]
+            } else {
+                out_of_stock_keywords.iter().map(|s| s.as_str()).collect()
+            };
+
+            if in_stock.iter().any(|&k| text.contains(&k.to_lowercase())) {
+                "In Stock".to_string()
+            } else if out_of_stock.iter().any(|&k| text.contains(&k.to_lowercase())) {
+                "Out of Stock".to_string()
+            } else {
+                "Unknown Status".to_string()
+            }
+        }
         _ => {
             "Extraction mode not yet implemented".to_string()
         }

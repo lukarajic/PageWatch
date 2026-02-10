@@ -15,5 +15,23 @@
     "last_value": "$8.48",
     "previous_value": null,
     "has_unread_change": true
+  },
+  {
+    "id": "4a755bda-d8be-4337-8add-73a926f419eb",
+    "name": "Mouth Wash",
+    "url": "https://www.amazon.ca/TheraBreath-Dentist-Recommended-Fresh-Breath/dp/B0C7HGNPTY/ref=sr_1_6?crid=2N220N0T3BQJE&dib=eyJ2IjoiMSJ9.xuntZC-g3Wz0InF2wjJI0hv9wz-Ltib8nq9Pl0B5zzXyGiIde8OGhHqOWNwVQBS4WTP_Ux3f0poq4zpjFkLMT0pMs35BuDArI4vsgVgqOWtFAcAvHe4kdrgi03dqS1oTFxHir-BLIEE9hN0k0d9YK4ujRcpUglw-ZxAsCzp_d2dWW7AEet6eo27IOY_B42mksNftNcimNPdBwBqxVqjalMikX9vx5VcZxvnNt48P23SYs4kDO9zuXbs1Wtl8_A-shd6n8Q0Q4NlDewNWYvA9dvmYbvDZTSIFTHQCy7_t7FU.vnjenvXdSxi_yUdWo6H_l_TAl0Uly3IWoV-ykGEajPM&dib_tag=se&keywords=mouth%2Bwash&qid=1770686376&rdc=1&sprefix=mouth%2Bwash%2Caps%2C148&sr=8-6&th=1",
+    "mode": {
+      "Availability": {
+        "in_stock_keywords": [],
+        "out_of_stock_keywords": []
+      }
+    },
+    "interval_seconds": 3600,
+    "last_checked": "2026-02-10T01:20:14.834282Z",
+    "last_success": "2026-02-10T01:20:16.937014Z",
+    "last_error": null,
+    "last_value": "In Stock",
+    "previous_value": null,
+    "has_unread_change": true
   }
 ]
