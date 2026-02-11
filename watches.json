@@ -9,8 +9,8 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-10T01:12:26.031110Z",
-    "last_success": "2026-02-10T01:12:28.386298Z",
+    "last_checked": "2026-02-10T15:30:41.641418Z",
+    "last_success": "2026-02-10T15:30:43.888832Z",
     "last_error": null,
     "last_value": "$8.48",
     "previous_value": null,
@@ -21,17 +21,33 @@
     "name": "Mouth Wash",
     "url": "https://www.amazon.ca/TheraBreath-Dentist-Recommended-Fresh-Breath/dp/B0C7HGNPTY/ref=sr_1_6?crid=2N220N0T3BQJE&dib=eyJ2IjoiMSJ9.xuntZC-g3Wz0InF2wjJI0hv9wz-Ltib8nq9Pl0B5zzXyGiIde8OGhHqOWNwVQBS4WTP_Ux3f0poq4zpjFkLMT0pMs35BuDArI4vsgVgqOWtFAcAvHe4kdrgi03dqS1oTFxHir-BLIEE9hN0k0d9YK4ujRcpUglw-ZxAsCzp_d2dWW7AEet6eo27IOY_B42mksNftNcimNPdBwBqxVqjalMikX9vx5VcZxvnNt48P23SYs4kDO9zuXbs1Wtl8_A-shd6n8Q0Q4NlDewNWYvA9dvmYbvDZTSIFTHQCy7_t7FU.vnjenvXdSxi_yUdWo6H_l_TAl0Uly3IWoV-ykGEajPM&dib_tag=se&keywords=mouth%2Bwash&qid=1770686376&rdc=1&sprefix=mouth%2Bwash%2Caps%2C148&sr=8-6&th=1",
     "mode": {
-      "Availability": {
-        "in_stock_keywords": [],
-        "out_of_stock_keywords": []
+      "Keyword": {
+        "keywords": []
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-10T01:20:14.834282Z",
-    "last_success": "2026-02-10T01:20:16.937014Z",
+    "last_checked": "2026-02-10T15:30:41.641432Z",
+    "last_success": "2026-02-10T15:30:43.807782Z",
     "last_error": null,
     "last_value": "In Stock",
     "previous_value": null,
-    "has_unread_change": true
+    "has_unread_change": false
+  },
+  {
+    "id": "bdefe07f-c2cd-4c7f-9601-bf70752e0af2",
+    "name": "Socks",
+    "url": "https://www.amazon.ca/Closemate-Athletic-Running-Wicking-Cushion/dp/B081QDJ5CH/ref=sr_1_2?crid=19DF7NWQQX30G&dib=eyJ2IjoiMSJ9.1QaB-LHWXy2QcdR0rqZWdWO8CD-fbftdCQrnZQPwBZJ0vr1DWY7kWdWNrpoxv5WoocCHx3joxyaXFVsu6TFdK7hqwXn5iifKwMiuSZZCsJs2D9T5ohP69M5gjyXzcxVTZqhYRqjzrS8YttcRKeLyT0YDGGcYuQm2BFaB2GJDFvydQ-WasNyTucF8lgXPFlslez2k_HQmDva0as6q9eoacldpBStX2_q_L2JM2WFeqELG4bRRKOlvDO77uF71iORf1ypHBVzri9A-9wnzxpz9fkzMfsnf11vNrou8PHXR2hA.xCuK-q-uMEsOd-ApWBWX18h1wmpgYgLNHZP6cjgCTNY&dib_tag=se&keywords=ankle%2Bsocks&qid=1720883917&sprefix=ankle%2Bsocks%2Caps%2C117&sr=8-2&th=1&psc=1",
+    "mode": {
+      "Keyword": {
+        "keywords": []
+      }
+    },
+    "interval_seconds": 3600,
+    "last_checked": "2026-02-10T15:54:10.450232Z",
+    "last_success": null,
+    "last_error": null,
+    "last_value": null,
+    "previous_value": null,
+    "has_unread_change": false
   }
 ]

@@ -86,6 +86,30 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
                 "Unknown Status".to_string()
             }
         }
+        TrackingMode::Keyword { keywords } => {
+            if keywords.is_empty() {
+                return Err(anyhow::anyhow!("Keyword tracking mode requires at least one keyword."));
+            }
+
+            let body_selector = Selector::parse("body").unwrap();
+            let text = document.select(&body_selector)
+                .next()
+                .map(|el| el.text().collect::<Vec<_>>().join(" ").to_lowercase())
+                .unwrap_or_else(|| html_content.to_lowercase());
+
+            let mut missing_keywords = Vec::new();
+            for keyword in keywords {
+                if !text.contains(&keyword.to_lowercase()) {
+                    missing_keywords.push(keyword.clone());
+                }
+            }
+
+            if missing_keywords.is_empty() {
+                format!("All keywords found: {}", keywords.join(", "))
+            } else {
+                format!("Missing keywords: {}", missing_keywords.join(", "))
+            }
+        }
         _ => {
             "Extraction mode not yet implemented".to_string()
         }
