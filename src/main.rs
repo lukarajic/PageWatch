@@ -24,6 +24,7 @@ enum InputMode {
     Normal,
     Editing,
     Details,
+    ConfirmDelete,
 }
 
 enum InputField {
@@ -197,12 +198,27 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             let status_text = if app.pending_checks > 0 { format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks) } else {
                 match app.input_mode {
                     InputMode::Normal => "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, 'Enter' for details.".to_string(),
-                    InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
-                    InputMode::Details => "Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(),
-                }
-            };
-            f.render_widget(Paragraph::new(status_text).block(Block::default().borders(Borders::ALL).title("Status")), chunks[1]);
-            if let InputMode::Details = app.input_mode {
+                                        InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
+                                        InputMode::Details => "Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(),
+                                        InputMode::ConfirmDelete => "Are you sure? 'y' to delete, 'n' to cancel.".to_string(),
+                                    }
+                                };
+                                f.render_widget(Paragraph::new(status_text).block(Block::default().borders(Borders::ALL).title("Status")), chunks[1]);
+                    
+                                if let InputMode::ConfirmDelete = app.input_mode {
+                                    let area = centered_rect(40, 20, size);
+                                    f.render_widget(Clear, area);
+                                    let block = Block::default().title(" Confirm Delete ").borders(Borders::ALL).border_style(Style::default().fg(Color::Red));
+                                    let text = vec![
+                                        Line::from(""),
+                                        Line::from("  Delete this watch?").alignment(ratatui::layout::Alignment::Center),
+                                        Line::from(""),
+                                        Line::from("  (y) Yes  /  (n) No").alignment(ratatui::layout::Alignment::Center),
+                                    ];
+                                    f.render_widget(Paragraph::new(text).block(block), area);
+                                }
+                    
+                                if let InputMode::Details = app.input_mode {
                 if let Some(i) = app.state.selected() {
                     let w = &app.watches[i];
                     let area = centered_rect(80, 80, size);
@@ -266,10 +282,28 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 }
                             }
                             KeyCode::Char('c') => { if let Some(i) = app.state.selected() { app.pending_checks += 1; let mut watch = app.watches[i].clone(); let tx = app.tx.clone(); tokio::spawn(async move { let _ = checker::check_watch(&mut watch).await; let _ = tx.send((i, watch)); }); } }
-                            KeyCode::Char('d') => { if let Some(i) = app.state.selected() { app.watches.remove(i); if app.watches.is_empty() { app.state.select(None); } else if i >= app.watches.len() { app.state.select(Some(app.watches.len() - 1)); } } }
-                            KeyCode::Down => app.next(), KeyCode::Up => app.previous(), _ => {}
-                        },
-                        InputMode::Details => match key.code { KeyCode::Esc | KeyCode::Char('q') => app.input_mode = InputMode::Normal, KeyCode::Down => app.scroll = app.scroll.saturating_add(1), KeyCode::Up => app.scroll = app.scroll.saturating_sub(1), _ => {} },
+                                                        KeyCode::Char('d') => {
+                                                            if app.state.selected().is_some() {
+                                                                app.input_mode = InputMode::ConfirmDelete;
+                                                            }
+                                                        }
+                                                        KeyCode::Down => app.next(), KeyCode::Up => app.previous(), _ => {}
+                                                    },
+                                                    InputMode::ConfirmDelete => match key.code {
+                                                        KeyCode::Char('y') | KeyCode::Enter => {
+                                                            if let Some(i) = app.state.selected() {
+                                                                app.watches.remove(i);
+                                                                if app.watches.is_empty() { app.state.select(None); }
+                                                                else if i >= app.watches.len() { app.state.select(Some(app.watches.len() - 1)); }
+                                                            }
+                                                            app.input_mode = InputMode::Normal;
+                                                        }
+                                                        KeyCode::Char('n') | KeyCode::Esc => {
+                                                            app.input_mode = InputMode::Normal;
+                                                        }
+                                                        _ => {}
+                                                    },
+                                                    InputMode::Details => match key.code { KeyCode::Esc | KeyCode::Char('q') => app.input_mode = InputMode::Normal, KeyCode::Down => app.scroll = app.scroll.saturating_add(1), KeyCode::Up => app.scroll = app.scroll.saturating_sub(1), _ => {} },
                         InputMode::Editing => match key.code {
                             KeyCode::Esc => app.reset_input(),
                             KeyCode::Enter => match app.input_field {
