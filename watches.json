@@ -9,8 +9,8 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-10T15:30:41.641418Z",
-    "last_success": "2026-02-10T15:30:43.888832Z",
+    "last_checked": "2026-02-12T01:40:07.164331Z",
+    "last_success": "2026-02-12T01:40:09.581409Z",
     "last_error": null,
     "last_value": "$8.48",
     "previous_value": null,
@@ -26,27 +26,10 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-10T15:30:41.641432Z",
+    "last_checked": "2026-02-12T01:40:07.164371Z",
     "last_success": "2026-02-10T15:30:43.807782Z",
     "last_error": null,
     "last_value": "In Stock",
-    "previous_value": null,
-    "has_unread_change": false
-  },
-  {
-    "id": "bdefe07f-c2cd-4c7f-9601-bf70752e0af2",
-    "name": "Socks",
-    "url": "https://www.amazon.ca/Closemate-Athletic-Running-Wicking-Cushion/dp/B081QDJ5CH/ref=sr_1_2?crid=19DF7NWQQX30G&dib=eyJ2IjoiMSJ9.1QaB-LHWXy2QcdR0rqZWdWO8CD-fbftdCQrnZQPwBZJ0vr1DWY7kWdWNrpoxv5WoocCHx3joxyaXFVsu6TFdK7hqwXn5iifKwMiuSZZCsJs2D9T5ohP69M5gjyXzcxVTZqhYRqjzrS8YttcRKeLyT0YDGGcYuQm2BFaB2GJDFvydQ-WasNyTucF8lgXPFlslez2k_HQmDva0as6q9eoacldpBStX2_q_L2JM2WFeqELG4bRRKOlvDO77uF71iORf1ypHBVzri9A-9wnzxpz9fkzMfsnf11vNrou8PHXR2hA.xCuK-q-uMEsOd-ApWBWX18h1wmpgYgLNHZP6cjgCTNY&dib_tag=se&keywords=ankle%2Bsocks&qid=1720883917&sprefix=ankle%2Bsocks%2Caps%2C117&sr=8-2&th=1&psc=1",
-    "mode": {
-      "Keyword": {
-        "keywords": []
-      }
-    },
-    "interval_seconds": 3600,
-    "last_checked": "2026-02-10T15:54:10.450232Z",
-    "last_success": null,
-    "last_error": null,
-    "last_value": null,
     "previous_value": null,
     "has_unread_change": false
   }
