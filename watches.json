@@ -9,8 +9,8 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-12T01:40:07.164331Z",
-    "last_success": "2026-02-12T01:40:09.581409Z",
+    "last_checked": "2026-02-12T17:41:51.500856Z",
+    "last_success": "2026-02-12T17:41:53.680243Z",
     "last_error": null,
     "last_value": "$8.48",
     "previous_value": null,

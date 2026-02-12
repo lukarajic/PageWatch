@@ -182,6 +182,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 if w.has_unread_change { title_spans.push(Span::raw(" ")); title_spans.push(Span::styled("● NEW", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))); }
                 let mut lines = vec![Line::from(title_spans), Line::from(format!("  Mode: {:?}", w.mode))];
                 if let Some(last) = w.last_checked { lines.push(Line::from(format!("  Last checked: {}", last.format("%Y-%m-%d %H:%M:%S")))); }
+                if let Some(success) = w.last_success {
+                    lines.push(Line::from(vec![
+                        Span::raw("  Last success: "),
+                        Span::styled(success.format("%Y-%m-%d %H:%M:%S").to_string(), Style::default().fg(Color::Green)),
+                    ]));
+                }
                 if let Some(val) = &w.last_value {
                     let snippet = if val.chars().count() > 50 { format!("{}...", val.chars().take(50).collect::<String>()) } else { val.clone() };
                     if w.has_unread_change && w.previous_value.is_some() {
@@ -195,15 +201,19 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             }).collect();
             let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Watches")).highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
             f.render_stateful_widget(list, chunks[0], &mut app.state);
-            let status_text = if app.pending_checks > 0 { format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks) } else {
-                match app.input_mode {
-                    InputMode::Normal => "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, 'Enter' for details.".to_string(),
-                                        InputMode::Editing => "Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(),
-                                        InputMode::Details => "Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(),
-                                        InputMode::ConfirmDelete => "Are you sure? 'y' to delete, 'n' to cancel.".to_string(),
-                                    }
-                                };
-                                f.render_widget(Paragraph::new(status_text).block(Block::default().borders(Borders::ALL).title("Status")), chunks[1]);
+                        let status_widget = if app.pending_checks > 0 {
+                            let text = format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks);
+                            Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(Color::Cyan)))
+                        } else {
+                            let (text, color) = match app.input_mode {
+                                InputMode::Normal => ("Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, 'Enter' for details.".to_string(), Color::White),
+                                InputMode::Editing => ("Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(), Color::Yellow),
+                                InputMode::Details => ("Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(), Color::Blue),
+                                InputMode::ConfirmDelete => ("Are you sure? 'y' to delete, 'n' to cancel.".to_string(), Color::Red),
+                            };
+                            Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(color)))
+                        };
+                        f.render_widget(status_widget, chunks[1]);
                     
                                 if let InputMode::ConfirmDelete = app.input_mode {
                                     let area = centered_rect(40, 20, size);
