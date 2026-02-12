@@ -110,8 +110,16 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
                 format!("Missing keywords: {}", missing_keywords.join(", "))
             }
         }
-        _ => {
-            "Extraction mode not yet implemented".to_string()
+        TrackingMode::HtmlSection { selector } => {
+            if let Ok(sel) = Selector::parse(selector) {
+                if let Some(element) = document.select(&sel).next() {
+                    element.text().collect::<Vec<_>>().join(" ").trim().to_string()
+                } else {
+                    "Section not found".to_string()
+                }
+            } else {
+                "Invalid CSS selector".to_string()
+            }
         }
     };
 
