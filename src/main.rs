@@ -89,6 +89,12 @@ impl App {
         app
     }
 
+    fn save(&self) {
+        if let Err(e) = storage::save_watches(&self.watches) {
+            eprintln!("Failed to auto-save watches: {}", e);
+        }
+    }
+
     fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => if i >= self.watches.len() - 1 { 0 } else { i + 1 },
@@ -133,6 +139,7 @@ impl App {
                 self.watches.push(new_watch);
                 self.state.select(Some(self.watches.len() - 1));
             }
+            self.save(); // Auto-save on create/edit
         }
         self.reset_input();
     }
@@ -156,7 +163,7 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    if let Err(e) = storage::save_watches(&app.watches) { eprintln!("Failed to save watches: {}", e); }
+    app.save(); // Final save on exit
     if let Err(err) = res { println!("{:?}", err); }
     Ok(())
 }
@@ -164,7 +171,10 @@ async fn main() -> Result<()> {
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
         while let Ok((idx, watch)) = app.rx.try_recv() {
-            if idx < app.watches.len() { app.watches[idx] = watch; }
+            if idx < app.watches.len() { 
+                app.watches[idx] = watch;
+                app.save(); // Save when background check updates a watch
+            }
             app.pending_checks = app.pending_checks.saturating_sub(1);
         }
         if app.last_tick.elapsed() >= std::time::Duration::from_secs(5) {
@@ -282,7 +292,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             KeyCode::Down => app.next(), KeyCode::Up => app.previous(), _ => {}
                         },
                         InputMode::ConfirmDelete => match key.code {
-                            KeyCode::Char('y') | KeyCode::Enter => { if let Some(i) = app.state.selected() { app.watches.remove(i); if app.watches.is_empty() { app.state.select(None); } else if i >= app.watches.len() { app.state.select(Some(app.watches.len() - 1)); } } app.input_mode = InputMode::Normal; }
+                            KeyCode::Char('y') | KeyCode::Enter => { if let Some(i) = app.state.selected() { app.watches.remove(i); app.save(); if app.watches.is_empty() { app.state.select(None); } else if i >= app.watches.len() { app.state.select(Some(app.watches.len() - 1)); } } app.input_mode = InputMode::Normal; }
                             KeyCode::Char('n') | KeyCode::Esc => { app.input_mode = InputMode::Normal; }
                             _ => {}
                         },
