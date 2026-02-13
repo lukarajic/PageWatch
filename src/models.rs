@@ -53,6 +53,9 @@ pub struct Watch {
     
     /// Whether there is a change that hasn't been "seen" by the user yet
     pub has_unread_change: bool,
+
+    pub total_checks: u64,
+    pub total_successes: u64,
 }
 
 impl Watch {
@@ -69,6 +72,8 @@ impl Watch {
             last_value: None,
             previous_value: None,
             has_unread_change: false,
+            total_checks: 0,
+            total_successes: 0,
         }
     }
 }

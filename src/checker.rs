@@ -6,6 +6,7 @@ use regex::Regex;
 
 pub async fn check_watch(watch: &mut Watch) -> Result<()> {
     watch.last_checked = Some(Utc::now());
+    watch.total_checks += 1;
 
     let client = reqwest::Client::builder()
         .user_agent("PageWatchTUI/0.1.0")
@@ -135,6 +136,7 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
 
     watch.last_value = Some(extracted_value);
     watch.last_success = Some(Utc::now());
+    watch.total_successes += 1;
     watch.last_error = None;
 
     Ok(())

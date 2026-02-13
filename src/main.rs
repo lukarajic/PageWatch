@@ -239,6 +239,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         Line::from(vec![Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&w.url)]),
                         Line::from(vec![Span::styled("Mode: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{:?}", w.mode))]),
                         Line::from(vec![Span::styled("Interval: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} seconds", w.interval_seconds))]),
+                        Line::from(vec![
+                            Span::styled("Stats: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::raw(format!("{} checks, {} successes", w.total_checks, w.total_successes)),
+                            Span::raw(if w.total_checks > 0 {
+                                format!(" ({:.1}% success rate)", (w.total_successes as f64 / w.total_checks as f64) * 100.0)
+                            } else {
+                                String::new()
+                            }),
+                        ]),
                         Line::from(""), Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(), Line::from("----------------------"),
                     ];
                     if let Some(val) = &w.last_value { details_text.push(Line::from(val.clone())); } else { details_text.push(Line::from("No data collected yet.")); }
