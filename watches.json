@@ -1,7 +1,7 @@
 [
   {
-    "id": "6acec935-1e9c-4f92-86fc-fe2acf27af03",
-    "name": "Ivory Body Wash",
+    "id": "354c7ee5-0922-4bb7-9628-9636b0e4af3c",
+    "name": "Ivory body wash",
     "url": "https://www.amazon.ca/Ivory-Gentle-Coconut-Water-Scent/dp/B09M7PB3X4/ref=sr_1_1_sspa?crid=1T2THB9GQBXFG&dib=eyJ2IjoiMSJ9.c1pEEeelziwLzXRGtecInteQ0zLf-SVyJo8_0onL5wLkgJQ6Pjq_QeKekZ0Jus_4-75z8gzu8JgyukBNsNN2H6M-T6-7CiaB0aIs3cEJ92HUpt14-FD19deAm2h4sc8SNCDVegHKC6Ia_yKUYuOeQIU6xhGS82hQHjiCVTTSzkT3jE3NmcCcr7nCeYykUi7M8pQI1-qN3ozoib0Q3_Yer_Wq3dBCMEfEKOOI2AIFU2DhS_x1gb2k6cBLLCovQG1g2TusfyQqi0GydFtGLVL1e7ueVOfNsiguZP6JhyECuEo.WBZHdiQmE_m9_kS9GwgH6fy9CXbdkV9fgEXcvE_65kY&dib_tag=se&keywords=body%2Bwash&qid=1770996032&sprefix=body%2B%2Caps%2C224&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1",
     "mode": {
       "Price": {
@@ -9,33 +9,14 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-13T15:20:59.112208Z",
-    "last_success": "2026-02-13T15:21:02.426381Z",
+    "last_checked": "2026-02-13T15:29:10.627213Z",
+    "last_success": "2026-02-13T15:29:12.916593Z",
     "last_error": null,
     "last_value": "$8.48",
     "previous_value": null,
     "has_unread_change": true,
     "total_checks": 1,
-    "total_successes": 1
-  },
-  {
-    "id": "f30b360a-5122-41ef-bd89-414ce6294c78",
-    "name": "Ivory Body Wash Availability",
-    "url": "https://www.amazon.ca/Ivory-Gentle-Coconut-Water-Scent/dp/B09M7PB3X4/ref=sr_1_1_sspa?crid=1T2THB9GQBXFG&dib=eyJ2IjoiMSJ9.c1pEEeelziwLzXRGtecInteQ0zLf-SVyJo8_0onL5wLkgJQ6Pjq_QeKekZ0Jus_4-75z8gzu8JgyukBNsNN2H6M-T6-7CiaB0aIs3cEJ92HUpt14-FD19deAm2h4sc8SNCDVegHKC6Ia_yKUYuOeQIU6xhGS82hQHjiCVTTSzkT3jE3NmcCcr7nCeYykUi7M8pQI1-qN3ozoib0Q3_Yer_Wq3dBCMEfEKOOI2AIFU2DhS_x1gb2k6cBLLCovQG1g2TusfyQqi0GydFtGLVL1e7ueVOfNsiguZP6JhyECuEo.WBZHdiQmE_m9_kS9GwgH6fy9CXbdkV9fgEXcvE_65kY&dib_tag=se&keywords=body%2Bwash&qid=1770996032&sprefix=body%2B%2Caps%2C224&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1",
-    "mode": {
-      "Availability": {
-        "in_stock_keywords": [],
-        "out_of_stock_keywords": []
-      }
-    },
-    "interval_seconds": 3600,
-    "last_checked": "2026-02-13T15:21:49.606455Z",
-    "last_success": "2026-02-13T15:21:52.876803Z",
-    "last_error": null,
-    "last_value": "In Stock",
-    "previous_value": null,
-    "has_unread_change": true,
-    "total_checks": 1,
-    "total_successes": 1
+    "total_successes": 1,
+    "error_log": []
   }
 ]

@@ -49,13 +49,21 @@ pub struct Watch {
     /// The last value we successfully extracted, used for comparison
     pub last_value: Option<String>,
     /// The value from the check before the last one
+    #[serde(default)]
     pub previous_value: Option<String>,
     
     /// Whether there is a change that hasn't been "seen" by the user yet
+    #[serde(default)]
     pub has_unread_change: bool,
 
+    #[serde(default)]
     pub total_checks: u64,
+    #[serde(default)]
     pub total_successes: u64,
+
+    /// History of the most recent error messages
+    #[serde(default)]
+    pub error_log: Vec<(DateTime<Utc>, String)>,
 }
 
 impl Watch {
@@ -74,6 +82,16 @@ impl Watch {
             has_unread_change: false,
             total_checks: 0,
             total_successes: 0,
+            error_log: Vec::new(),
+        }
+    }
+
+    pub fn add_error(&mut self, error: String) {
+        self.last_error = Some(error.clone());
+        self.error_log.push((Utc::now(), error));
+        // Keep only the last 10 errors
+        if self.error_log.len() > 10 {
+            self.error_log.remove(0);
         }
     }
 }

@@ -16,20 +16,25 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
     
     if !response.status().is_success() {
         let error_msg = format!("HTTP {}", response.status());
-        watch.last_error = Some(error_msg.clone());
+        watch.add_error(error_msg.clone());
         return Err(anyhow::anyhow!(error_msg));
     }
 
-    let html_content = response.text().await?;
+    let html_content = response.text().await.map_err(|e| {
+        let msg = format!("Failed to get text: {}", e);
+        watch.add_error(msg.clone());
+        e
+    })?;
     let document = Html::parse_document(&html_content);
 
-    let extracted_value = match &watch.mode {
+    // Use a Result to capture either the extracted value or an error message to log
+    let result: std::result::Result<String, String> = match &watch.mode {
         TrackingMode::FullPage => {
             let selector = Selector::parse("body").unwrap();
             if let Some(body) = document.select(&selector).next() {
-                body.text().collect::<Vec<_>>().join(" ").trim().to_string()
+                Ok(body.text().collect::<Vec<_>>().join(" ").trim().to_string())
             } else {
-                html_content
+                Ok(html_content.clone())
             }
         }
         TrackingMode::Price { selector } => {
@@ -50,14 +55,12 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
                     .unwrap_or_else(|| html_content.clone())
             };
 
-            // Regex for price: currency symbol followed by numbers or vice versa
-            // Matches $10.99, £ 5, 100.00€, 50 USD, etc.
             let price_re = Regex::new(r"([$€£¥₹]\s?\d+([.,]\d+)?)|(\d+([.,]\d+)?\s?([$€£¥]|USD|EUR|GBP|JPY))").unwrap();
             
             if let Some(mat) = price_re.find(&text_to_search) {
-                mat.as_str().trim().to_string()
+                Ok(mat.as_str().trim().to_string())
             } else {
-                "Price not found".to_string()
+                Ok("Price not found".to_string())
             }
         }
         TrackingMode::Availability { in_stock_keywords, out_of_stock_keywords } => {
@@ -80,47 +83,55 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
             };
 
             if in_stock.iter().any(|&k| text.contains(&k.to_lowercase())) {
-                "In Stock".to_string()
+                Ok("In Stock".to_string())
             } else if out_of_stock.iter().any(|&k| text.contains(&k.to_lowercase())) {
-                "Out of Stock".to_string()
+                Ok("Out of Stock".to_string())
             } else {
-                "Unknown Status".to_string()
+                Ok("Unknown Status".to_string())
             }
         }
         TrackingMode::Keyword { keywords } => {
             if keywords.is_empty() {
-                return Err(anyhow::anyhow!("Keyword tracking mode requires at least one keyword."));
-            }
-
-            let body_selector = Selector::parse("body").unwrap();
-            let text = document.select(&body_selector)
-                .next()
-                .map(|el| el.text().collect::<Vec<_>>().join(" ").to_lowercase())
-                .unwrap_or_else(|| html_content.to_lowercase());
-
-            let mut missing_keywords = Vec::new();
-            for keyword in keywords {
-                if !text.contains(&keyword.to_lowercase()) {
-                    missing_keywords.push(keyword.clone());
-                }
-            }
-
-            if missing_keywords.is_empty() {
-                format!("All keywords found: {}", keywords.join(", "))
+                Err("Keyword tracking mode requires at least one keyword.".to_string())
             } else {
-                format!("Missing keywords: {}", missing_keywords.join(", "))
+                let body_selector = Selector::parse("body").unwrap();
+                let text = document.select(&body_selector)
+                    .next()
+                    .map(|el| el.text().collect::<Vec<_>>().join(" ").to_lowercase())
+                    .unwrap_or_else(|| html_content.to_lowercase());
+
+                let mut missing_keywords = Vec::new();
+                for keyword in keywords {
+                    if !text.contains(&keyword.to_lowercase()) {
+                        missing_keywords.push(keyword.clone());
+                    }
+                }
+
+                if missing_keywords.is_empty() {
+                    Ok(format!("All keywords found: {}", keywords.join(", ")))
+                } else {
+                    Err(format!("Missing keywords: {}", missing_keywords.join(", ")))
+                }
             }
         }
         TrackingMode::HtmlSection { selector } => {
             if let Ok(sel) = Selector::parse(selector) {
                 if let Some(element) = document.select(&sel).next() {
-                    element.text().collect::<Vec<_>>().join(" ").trim().to_string()
+                    Ok(element.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 } else {
-                    "Section not found".to_string()
+                    Err("Section not found".to_string())
                 }
             } else {
-                "Invalid CSS selector".to_string()
+                Err("Invalid CSS selector".to_string())
             }
+        }
+    };
+
+    let extracted_value = match result {
+        Ok(val) => val,
+        Err(msg) => {
+            watch.add_error(msg.clone());
+            msg
         }
     };
 
@@ -130,7 +141,6 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
             watch.has_unread_change = true;
         }
     } else {
-        // First successful fetch is technically a "change" from nothing
         watch.has_unread_change = true;
     }
 
