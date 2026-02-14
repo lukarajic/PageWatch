@@ -57,16 +57,15 @@ struct App {
 
 impl App {
     fn new() -> App {
-        let loaded_watches = storage::load_watches().unwrap_or_else(|_| Vec::new());
-        let watches = if loaded_watches.is_empty() {
-            vec![
-                Watch::new("Competitor Price".to_string(), "https://example.com/product".to_string(), TrackingMode::Price { selector: None }),
-                Watch::new("My Portfolio".to_string(), "https://mysite.com".to_string(), TrackingMode::FullPage),
-                Watch::new("GPU Stock".to_string(), "https://store.com/gpu".to_string(), TrackingMode::Availability { in_stock_keywords: vec![], out_of_stock_keywords: vec![] }),
-            ]
-        } else {
-            loaded_watches
+        let watches = match storage::load_watches() {
+            Ok(w) => w,
+            Err(_) => {
+                // If there's an error (other than file not found), it might be helpful to know
+                // But for now we'll just start with an empty list to avoid crashing
+                Vec::new()
+            }
         };
+
         let (tx, rx) = mpsc::unbounded_channel();
         let mut app = App {
             watches,
@@ -251,7 +250,19 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         Line::from(""), Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(), Line::from("----------------------"),
                     ];
                     if let Some(val) = &w.last_value { details_text.push(Line::from(val.clone())); } else { details_text.push(Line::from("No data collected yet.")); }
-                    if let Some(err) = &w.last_error { details_text.push(Line::from("")); details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into()); details_text.push(Line::from(err.clone())); }
+                                        if let Some(err) = &w.last_error {
+                                            details_text.push(Line::from(""));
+                                            details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into());
+                                            details_text.push(Line::from(err.clone()));
+                                        }
+                    
+                                        if !w.error_log.is_empty() {
+                                            details_text.push(Line::from(""));
+                                            details_text.push(Span::styled("Error History (Last 10):", Style::default().add_modifier(Modifier::BOLD)).into());
+                                            for (time, msg) in w.error_log.iter().rev() {
+                                                details_text.push(Line::from(format!("  {} - {}", time.format("%H:%M:%S"), msg)));
+                                            }
+                                        }
                     f.render_widget(Paragraph::new(details_text).block(Block::default().title(format!(" Details: {} ", w.name)).borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan))).wrap(ratatui::widgets::Wrap { trim: true }).scroll((app.scroll, 0)), area);
                 }
             }
