@@ -25,6 +25,7 @@ enum InputMode {
     Editing,
     Details,
     ConfirmDelete,
+    Search,
 }
 
 enum InputField {
@@ -46,6 +47,7 @@ struct App {
     url_input: String,
     interval_input: String,
     advanced_input: String,
+    search_query: String,
     mode_selection: usize,
     editing_watch_index: Option<usize>,
     pending_checks: usize,
@@ -59,11 +61,7 @@ impl App {
     fn new() -> App {
         let watches = match storage::load_watches() {
             Ok(w) => w,
-            Err(_) => {
-                // If there's an error (other than file not found), it might be helpful to know
-                // But for now we'll just start with an empty list to avoid crashing
-                Vec::new()
-            }
+            Err(_) => Vec::new(),
         };
 
         let (tx, rx) = mpsc::unbounded_channel();
@@ -76,6 +74,7 @@ impl App {
             url_input: String::new(),
             interval_input: String::new(),
             advanced_input: String::new(),
+            search_query: String::new(),
             mode_selection: 0,
             editing_watch_index: None,
             pending_checks: 0,
@@ -94,22 +93,43 @@ impl App {
         }
     }
 
+    fn filtered_indices(&self) -> Vec<usize> {
+        self.watches.iter().enumerate()
+            .filter(|(_, w)| {
+                if self.search_query.is_empty() { return true; }
+                let q = self.search_query.to_lowercase();
+                w.name.to_lowercase().contains(&q) || w.url.to_lowercase().contains(&q)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     fn next(&mut self) {
+        let indices = self.filtered_indices();
+        let filtered_count = indices.len();
+        if filtered_count == 0 { return; }
         let i = match self.state.selected() {
-            Some(i) => if i >= self.watches.len() - 1 { 0 } else { i + 1 },
+            Some(i) => if i >= filtered_count - 1 { 0 } else { i + 1 },
             None => 0,
         };
         self.state.select(Some(i));
-        if i < self.watches.len() { self.watches[i].has_unread_change = false; }
+        if let Some(&orig_idx) = indices.get(i) {
+            self.watches[orig_idx].has_unread_change = false;
+        }
     }
 
     fn previous(&mut self) {
+        let indices = self.filtered_indices();
+        let filtered_count = indices.len();
+        if filtered_count == 0 { return; }
         let i = match self.state.selected() {
-            Some(i) => if i == 0 { self.watches.len() - 1 } else { i - 1 },
+            Some(i) => if i == 0 { filtered_count - 1 } else { i - 1 },
             None => 0,
         };
         self.state.select(Some(i));
-        if i < self.watches.len() { self.watches[i].has_unread_change = false; }
+        if let Some(&orig_idx) = indices.get(i) {
+            self.watches[orig_idx].has_unread_change = false;
+        }
     }
 
     fn submit_watch(&mut self) {
@@ -138,15 +158,20 @@ impl App {
                 self.watches.push(new_watch);
                 self.state.select(Some(self.watches.len() - 1));
             }
-            self.save(); // Auto-save on create/edit
+            self.save();
         }
         self.reset_input();
     }
 
     fn reset_input(&mut self) {
-        self.name_input.clear(); self.url_input.clear(); self.interval_input.clear(); self.advanced_input.clear();
-        self.mode_selection = 0; self.editing_watch_index = None;
-        self.input_mode = InputMode::Normal; self.input_field = InputField::Name;
+        self.name_input.clear();
+        self.url_input.clear();
+        self.advanced_input.clear();
+        self.interval_input.clear();
+        self.mode_selection = 0;
+        self.editing_watch_index = None;
+        self.input_mode = InputMode::Normal;
+        self.input_field = InputField::Name;
     }
 }
 
@@ -157,12 +182,15 @@ async fn main() -> Result<()> {
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+
     let mut app = App::new();
     let res = run_app(&mut terminal, &mut app).await;
+
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    app.save(); // Final save on exit
+
+    app.save();
     if let Err(err) = res { println!("{:?}", err); }
     Ok(())
 }
@@ -172,10 +200,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
         while let Ok((idx, watch)) = app.rx.try_recv() {
             if idx < app.watches.len() { 
                 app.watches[idx] = watch;
-                app.save(); // Save when background check updates a watch
+                app.save();
             }
             app.pending_checks = app.pending_checks.saturating_sub(1);
         }
+
         if app.last_tick.elapsed() >= std::time::Duration::from_secs(5) {
             app.last_tick = std::time::Instant::now();
             let now = chrono::Utc::now();
@@ -189,10 +218,28 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 }
             }
         }
+
         terminal.draw(|f| {
             let size = f.area();
-            let chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(0), Constraint::Length(3)].as_ref()).split(size);
-            let items: Vec<ListItem> = app.watches.iter().map(|w| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(if app.search_query.is_empty() && !matches!(app.input_mode, InputMode::Search) { 0 } else { 3 }),
+                    Constraint::Min(0),
+                    Constraint::Length(3)
+                ].as_ref())
+                .split(size);
+
+            if !app.search_query.is_empty() || matches!(app.input_mode, InputMode::Search) {
+                let search_style = if let InputMode::Search = app.input_mode { Style::default().fg(Color::Cyan) } else { Style::default() };
+                let search_bar = Paragraph::new(format!(" {}", app.search_query))
+                    .block(Block::default().borders(Borders::ALL).title(" Search (Name or URL) ").border_style(search_style));
+                f.render_widget(search_bar, chunks[0]);
+            }
+
+            let filtered_indices = app.filtered_indices();
+            let items: Vec<ListItem> = filtered_indices.iter().map(|&idx| {
+                let w = &app.watches[idx];
                 let mut title_spans = vec![Span::styled(&w.name, Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!(" ({})", w.url))];
                 if w.has_unread_change { title_spans.push(Span::raw(" ")); title_spans.push(Span::styled("● NEW", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))); }
                 let mut lines = vec![Line::from(title_spans), Line::from(format!("  Mode: {:?} | Interval: {}s", w.mode, w.interval_seconds))];
@@ -209,63 +256,68 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 if let Some(err) = &w.last_error { lines.push(Line::from(vec![Span::raw("  Error: "), Span::styled(err, Style::default().fg(Color::Red))])); }
                 ListItem::new(lines).style(Style::default().fg(Color::White))
             }).collect();
-            let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Watches")).highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
-            f.render_stateful_widget(list, chunks[0], &mut app.state);
+
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::ALL).title(format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())))
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
+            f.render_stateful_widget(list, chunks[1], &mut app.state);
+
             let status_widget = if app.pending_checks > 0 {
                 let text = format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks);
                 Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(Color::Cyan)))
             } else {
                 let (text, color) = match app.input_mode {
-                    InputMode::Normal => ("Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, 'Enter' for details.".to_string(), Color::White),
+                    InputMode::Normal => ("Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, '/' to search.".to_string(), Color::White),
                     InputMode::Editing => ("Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(), Color::Yellow),
                     InputMode::Details => ("Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(), Color::Blue),
                     InputMode::ConfirmDelete => ("Are you sure? 'y' to delete, 'n' to cancel.".to_string(), Color::Red),
+                    InputMode::Search => ("Searching: Type to filter, 'Enter' or 'Esc' to finish.".to_string(), Color::Cyan),
                 };
                 Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(color)))
             };
-            f.render_widget(status_widget, chunks[1]);
+            f.render_widget(status_widget, chunks[2]);
+
             if let InputMode::ConfirmDelete = app.input_mode {
                 let area = centered_rect(40, 20, size); f.render_widget(Clear, area);
                 let block = Block::default().title(" Confirm Delete ").borders(Borders::ALL).border_style(Style::default().fg(Color::Red));
                 let text = vec![Line::from(""), Line::from("  Delete this watch?").alignment(ratatui::layout::Alignment::Center), Line::from(""), Line::from("  (y) Yes  /  (n) No").alignment(ratatui::layout::Alignment::Center)];
                 f.render_widget(Paragraph::new(text).block(block), area);
             }
+
             if let InputMode::Details = app.input_mode {
                 if let Some(i) = app.state.selected() {
-                    let w = &app.watches[i];
-                    let area = centered_rect(80, 80, size); f.render_widget(Clear, area);
-                    let mut details_text = vec![
-                        Line::from(vec![Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&w.url)]),
-                        Line::from(vec![Span::styled("Mode: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{:?}", w.mode))]),
-                        Line::from(vec![Span::styled("Interval: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} seconds", w.interval_seconds))]),
-                        Line::from(vec![
-                            Span::styled("Stats: ", Style::default().add_modifier(Modifier::BOLD)),
-                            Span::raw(format!("{} checks, {} successes", w.total_checks, w.total_successes)),
-                            Span::raw(if w.total_checks > 0 {
-                                format!(" ({:.1}% success rate)", (w.total_successes as f64 / w.total_checks as f64) * 100.0)
-                            } else {
-                                String::new()
-                            }),
-                        ]),
-                        Line::from(""), Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(), Line::from("----------------------"),
-                    ];
-                    if let Some(val) = &w.last_value { details_text.push(Line::from(val.clone())); } else { details_text.push(Line::from("No data collected yet.")); }
-                                        if let Some(err) = &w.last_error {
-                                            details_text.push(Line::from(""));
-                                            details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into());
-                                            details_text.push(Line::from(err.clone()));
-                                        }
-                    
-                                        if !w.error_log.is_empty() {
-                                            details_text.push(Line::from(""));
-                                            details_text.push(Span::styled("Error History (Last 10):", Style::default().add_modifier(Modifier::BOLD)).into());
-                                            for (time, msg) in w.error_log.iter().rev() {
-                                                details_text.push(Line::from(format!("  {} - {}", time.format("%H:%M:%S"), msg)));
-                                            }
-                                        }
-                    f.render_widget(Paragraph::new(details_text).block(Block::default().title(format!(" Details: {} ", w.name)).borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan))).wrap(ratatui::widgets::Wrap { trim: true }).scroll((app.scroll, 0)), area);
+                    if let Some(&orig_idx) = filtered_indices.get(i) {
+                        let w = &app.watches[orig_idx];
+                        let area = centered_rect(80, 80, size); f.render_widget(Clear, area);
+                        let mut details_text = vec![
+                            Line::from(vec![Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&w.url)]),
+                            Line::from(vec![Span::styled("Mode: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{:?}", w.mode))]),
+                            Line::from(vec![Span::styled("Interval: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} seconds", w.interval_seconds))]),
+                            Line::from(vec![
+                                Span::styled("Stats: ", Style::default().add_modifier(Modifier::BOLD)),
+                                Span::raw(format!("{} checks, {} successes", w.total_checks, w.total_successes)),
+                                Span::raw(if w.total_checks > 0 { format!(" ({:.1}% success rate)", (w.total_successes as f64 / w.total_checks as f64) * 100.0) } else { String::new() }),
+                            ]),
+                            Line::from(""), Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(), Line::from("----------------------"),
+                        ];
+                        if let Some(val) = &w.last_value { details_text.push(Line::from(val.clone())); } else { details_text.push(Line::from("No data collected yet.")); }
+                        if let Some(err) = &w.last_error {
+                            details_text.push(Line::from(""));
+                            details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into());
+                            details_text.push(Line::from(err.clone()));
+                        }
+                        if !w.error_log.is_empty() {
+                            details_text.push(Line::from(""));
+                            details_text.push(Span::styled("Error History (Last 10):", Style::default().add_modifier(Modifier::BOLD)).into());
+                            for (time, msg) in w.error_log.iter().rev() {
+                                details_text.push(Line::from(format!("  {} - {}", time.format("%H:%M:%S"), msg)));
+                            }
+                        }
+                        f.render_widget(Paragraph::new(details_text).block(Block::default().title(format!(" Details: {} ", w.name)).borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan))).wrap(ratatui::widgets::Wrap { trim: true }).scroll((app.scroll, 0)), area);
+                    }
                 }
             }
+
             if let InputMode::Editing = app.input_mode {
                 let show_advanced = app.mode_selection == 3 || app.mode_selection == 4;
                 let title = if app.editing_watch_index.is_some() { "Edit Watch" } else { "Add New Watch" };
@@ -290,29 +342,61 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 }
             }
         })?;
+
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match app.input_mode {
                         InputMode::Normal => match key.code {
                             KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Char('/') => { app.input_mode = InputMode::Search; }
                             KeyCode::Enter => { if app.state.selected().is_some() { app.input_mode = InputMode::Details; app.scroll = 0; } }
                             KeyCode::Char('n') => { app.input_mode = InputMode::Editing; app.input_field = InputField::Name; app.editing_watch_index = None; app.name_input.clear(); app.url_input.clear(); app.interval_input.clear(); app.advanced_input.clear(); app.mode_selection = 0; }
                             KeyCode::Char('e') => {
+                                let indices = app.filtered_indices();
                                 if let Some(i) = app.state.selected() {
-                                    let watch = &app.watches[i];
-                                    app.input_mode = InputMode::Editing; app.input_field = InputField::Name; app.editing_watch_index = Some(i);
-                                    app.name_input = watch.name.clone(); app.url_input = watch.url.clone(); app.interval_input = watch.interval_seconds.to_string();
-                                    app.mode_selection = match watch.mode { TrackingMode::FullPage => 0, TrackingMode::Price { .. } => 1, TrackingMode::Availability { .. } => 2, TrackingMode::Keyword { .. } => 3, TrackingMode::HtmlSection { .. } => 4 };
-                                    app.advanced_input = match &watch.mode { TrackingMode::Keyword { keywords } => keywords.join(", "), TrackingMode::HtmlSection { selector } => selector.clone(), _ => String::new() };
+                                    if let Some(&orig_idx) = indices.get(i) {
+                                        let watch = &app.watches[orig_idx];
+                                        app.input_mode = InputMode::Editing; app.input_field = InputField::Name; app.editing_watch_index = Some(orig_idx);
+                                        app.name_input = watch.name.clone(); app.url_input = watch.url.clone(); app.interval_input = watch.interval_seconds.to_string();
+                                        app.mode_selection = match watch.mode { TrackingMode::FullPage => 0, TrackingMode::Price { .. } => 1, TrackingMode::Availability { .. } => 2, TrackingMode::Keyword { .. } => 3, TrackingMode::HtmlSection { .. } => 4 };
+                                        app.advanced_input = match &watch.mode { TrackingMode::Keyword { keywords } => keywords.join(", "), TrackingMode::HtmlSection { selector } => selector.clone(), _ => String::new() };
+                                    }
                                 }
                             }
-                            KeyCode::Char('c') => { if let Some(i) = app.state.selected() { app.pending_checks += 1; let mut watch = app.watches[i].clone(); let tx = app.tx.clone(); tokio::spawn(async move { let _ = checker::check_watch(&mut watch).await; let _ = tx.send((i, watch)); }); } }
+                            KeyCode::Char('c') => {
+                                let indices = app.filtered_indices();
+                                if let Some(i) = app.state.selected() {
+                                    if let Some(&orig_idx) = indices.get(i) {
+                                        app.pending_checks += 1;
+                                        let mut watch_clone = app.watches[orig_idx].clone();
+                                        let tx = app.tx.clone();
+                                        tokio::spawn(async move { let _ = checker::check_watch(&mut watch_clone).await; let _ = tx.send((orig_idx, watch_clone)); });
+                                    }
+                                }
+                            }
                             KeyCode::Char('d') => { if app.state.selected().is_some() { app.input_mode = InputMode::ConfirmDelete; } }
                             KeyCode::Down => app.next(), KeyCode::Up => app.previous(), _ => {}
                         },
+                        InputMode::Search => match key.code {
+                            KeyCode::Enter | KeyCode::Esc => { app.input_mode = InputMode::Normal; }
+                            KeyCode::Char(c) => { app.search_query.push(c); app.state.select(Some(0)); }
+                            KeyCode::Backspace => { app.search_query.pop(); app.state.select(Some(0)); }
+                            _ => {}
+                        },
                         InputMode::ConfirmDelete => match key.code {
-                            KeyCode::Char('y') | KeyCode::Enter => { if let Some(i) = app.state.selected() { app.watches.remove(i); app.save(); if app.watches.is_empty() { app.state.select(None); } else if i >= app.watches.len() { app.state.select(Some(app.watches.len() - 1)); } } app.input_mode = InputMode::Normal; }
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                let indices = app.filtered_indices();
+                                if let Some(i) = app.state.selected() {
+                                    if let Some(&orig_idx) = indices.get(i) {
+                                        app.watches.remove(orig_idx); app.save();
+                                        let new_indices = app.filtered_indices();
+                                        if new_indices.is_empty() { app.state.select(None); }
+                                        else { app.state.select(Some(0)); }
+                                    }
+                                }
+                                app.input_mode = InputMode::Normal;
+                            }
                             KeyCode::Char('n') | KeyCode::Esc => { app.input_mode = InputMode::Normal; }
                             _ => {}
                         },

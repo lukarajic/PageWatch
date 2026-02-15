@@ -9,14 +9,14 @@
       }
     },
     "interval_seconds": 3600,
-    "last_checked": "2026-02-13T15:29:10.627213Z",
-    "last_success": "2026-02-13T15:29:12.916593Z",
+    "last_checked": "2026-02-14T16:50:07.679976Z",
+    "last_success": "2026-02-14T16:50:10.061244Z",
     "last_error": null,
     "last_value": "$8.48",
     "previous_value": null,
     "has_unread_change": true,
-    "total_checks": 1,
-    "total_successes": 1,
+    "total_checks": 2,
+    "total_successes": 2,
     "error_log": []
   }
 ]
