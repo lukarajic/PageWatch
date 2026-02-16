@@ -15,7 +15,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Table, Row, Cell, TableState},
     Terminal,
 };
 use std::io::{self, stdout};
@@ -40,7 +40,7 @@ use tokio::sync::mpsc;
 
 struct App {
     watches: Vec<Watch>,
-    state: ListState,
+    state: TableState,
     input_mode: InputMode,
     input_field: InputField,
     name_input: String,
@@ -67,7 +67,7 @@ impl App {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut app = App {
             watches,
-            state: ListState::default(),
+            state: TableState::default(),
             input_mode: InputMode::Normal,
             input_field: InputField::Name,
             name_input: String::new(),
@@ -231,36 +231,53 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 .split(size);
 
             if !app.search_query.is_empty() || matches!(app.input_mode, InputMode::Search) {
-                let search_style = if let InputMode::Search = app.input_mode { Style::default().fg(Color::Cyan) } else { Style::default() };
                 let search_bar = Paragraph::new(format!(" {}", app.search_query))
-                    .block(Block::default().borders(Borders::ALL).title(" Search (Name or URL) ").border_style(search_style));
+                    .block(Block::default().borders(Borders::ALL).title(" Search ").border_style(if let InputMode::Search = app.input_mode { Style::default().fg(Color::Cyan) } else { Style::default() }));
                 f.render_widget(search_bar, chunks[0]);
             }
 
             let filtered_indices = app.filtered_indices();
-            let items: Vec<ListItem> = filtered_indices.iter().map(|&idx| {
+            let rows: Vec<Row> = filtered_indices.iter().map(|&idx| {
                 let w = &app.watches[idx];
-                let mut title_spans = vec![Span::styled(&w.name, Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!(" ({})", w.url))];
-                if w.has_unread_change { title_spans.push(Span::raw(" ")); title_spans.push(Span::styled("● NEW", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))); }
-                let mut lines = vec![Line::from(title_spans), Line::from(format!("  Mode: {:?} | Interval: {}s", w.mode, w.interval_seconds))];
-                if let Some(last) = w.last_checked { lines.push(Line::from(format!("  Last checked: {}", last.format("%Y-%m-%d %H:%M:%S")))); }
-                if let Some(success) = w.last_success { lines.push(Line::from(vec![Span::raw("  Last success: "), Span::styled(success.format("%Y-%m-%d %H:%M:%S").to_string(), Style::default().fg(Color::Green))])); }
-                if let Some(val) = &w.last_value {
-                    let snippet = if val.chars().count() > 50 { format!("{}...", val.chars().take(50).collect::<String>()) } else { val.clone() };
-                    if w.has_unread_change && w.previous_value.is_some() {
-                        let prev_val = w.previous_value.as_ref().unwrap();
-                        let prev_snippet = if prev_val.chars().count() > 50 { format!("{}...", prev_val.chars().take(50).collect::<String>()) } else { prev_val.clone() };
-                        lines.push(Line::from(vec![Span::raw("  Change: "), Span::styled(prev_snippet, Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT)), Span::raw(" -> "), Span::styled(snippet, Style::default().fg(Color::Green))]));
-                    } else { lines.push(Line::from(vec![Span::raw("  Value: "), Span::styled(snippet, Style::default().fg(Color::Cyan))])); }
-                }
-                if let Some(err) = &w.last_error { lines.push(Line::from(vec![Span::raw("  Error: "), Span::styled(err, Style::default().fg(Color::Red))])); }
-                ListItem::new(lines).style(Style::default().fg(Color::White))
+                let name = if w.has_unread_change { format!("● {}", w.name) } else { w.name.clone() };
+                let name_style = if w.has_unread_change { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() };
+                
+                let last_success = w.last_success.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_else(|| "Never".to_string());
+                let mode_str = match &w.mode {
+                    TrackingMode::FullPage => "Full Text",
+                    TrackingMode::Price { .. } => "Price",
+                    TrackingMode::Availability { .. } => "Available",
+                    TrackingMode::Keyword { .. } => "Keywords",
+                    TrackingMode::HtmlSection { .. } => "Section",
+                };
+
+                let value_snippet = if let Some(err) = &w.last_error {
+                    format!("Error: {}", err)
+                } else if let Some(val) = &w.last_value {
+                    if val.chars().count() > 30 { format!("{}...", val.chars().take(30).collect::<String>()) } else { val.clone() }
+                } else {
+                    "Pending...".to_string()
+                };
+
+                Row::new(vec![
+                    Cell::from(name).style(name_style),
+                    Cell::from(mode_str),
+                    Cell::from(last_success),
+                    Cell::from(value_snippet),
+                ])
             }).collect();
 
-            let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
-            f.render_stateful_widget(list, chunks[1], &mut app.state);
+            let table = Table::new(rows, [
+                Constraint::Percentage(25),
+                Constraint::Percentage(15),
+                Constraint::Percentage(15),
+                Constraint::Percentage(45),
+            ])
+            .header(Row::new(vec!["Name", "Mode", "Last Success", "Value"]).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+            .block(Block::default().borders(Borders::ALL).title(format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())))
+            .row_highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
+
+            f.render_stateful_widget(table, chunks[1], &mut app.state);
 
             let status_widget = if app.pending_checks > 0 {
                 let text = format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks);
@@ -424,6 +441,21 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default().direction(Direction::Vertical).constraints([Constraint::Percentage((100 - percent_y) / 2), Constraint::Percentage(percent_y), Constraint::Percentage((100 - percent_y) / 2)].as_ref()).split(r);
-    Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage((100 - percent_x) / 2), Constraint::Percentage(percent_x), Constraint::Percentage((100 - percent_x) / 2)].as_ref()).split(popup_layout[1])[1]
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ].as_ref())
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ].as_ref())
+        .split(popup_layout[1])[1]
 }
