@@ -53,6 +53,7 @@ struct App {
     pending_checks: usize,
     last_tick: std::time::Instant,
     scroll: u16,
+    is_paused: bool,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
@@ -80,6 +81,7 @@ impl App {
             pending_checks: 0,
             last_tick: std::time::Instant::now(),
             scroll: 0,
+            is_paused: false,
             tx,
             rx,
         };
@@ -205,7 +207,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             app.pending_checks = app.pending_checks.saturating_sub(1);
         }
 
-        if app.last_tick.elapsed() >= std::time::Duration::from_secs(5) {
+        if !app.is_paused && app.last_tick.elapsed() >= std::time::Duration::from_secs(5) {
             app.last_tick = std::time::Instant::now();
             let now = chrono::Utc::now();
             for (i, watch) in app.watches.iter().enumerate() {
@@ -267,6 +269,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 ])
             }).collect();
 
+            let table_title = if app.is_paused {
+                format!(" Watches ({}/{}) - PAUSED ", filtered_indices.len(), app.watches.len())
+            } else {
+                format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())
+            };
+
+            let table_border_style = if app.is_paused { Style::default().fg(Color::Yellow) } else { Style::default() };
+
             let table = Table::new(rows, [
                 Constraint::Percentage(25),
                 Constraint::Percentage(15),
@@ -274,7 +284,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 Constraint::Percentage(45),
             ])
             .header(Row::new(vec!["Name", "Mode", "Last Success", "Value"]).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
-            .block(Block::default().borders(Borders::ALL).title(format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())))
+            .block(Block::default().borders(Borders::ALL).title(table_title).border_style(table_border_style))
             .row_highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
 
             f.render_stateful_widget(table, chunks[1], &mut app.state);
@@ -284,7 +294,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(Color::Cyan)))
             } else {
                 let (text, color) = match app.input_mode {
-                    InputMode::Normal => ("Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, '/' to search.".to_string(), Color::White),
+                    InputMode::Normal => {
+                        let mut t = "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, '/' to search, 'p' to ".to_string();
+                        t.push_str(if app.is_paused { "resume" } else { "pause" });
+                        (t, if app.is_paused { Color::Yellow } else { Color::White })
+                    },
                     InputMode::Editing => ("Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(), Color::Yellow),
                     InputMode::Details => ("Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(), Color::Blue),
                     InputMode::ConfirmDelete => ("Are you sure? 'y' to delete, 'n' to cancel.".to_string(), Color::Red),
@@ -367,6 +381,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         InputMode::Normal => match key.code {
                             KeyCode::Char('q') => return Ok(()),
                             KeyCode::Char('/') => { app.input_mode = InputMode::Search; }
+                            KeyCode::Char('p') => { app.is_paused = !app.is_paused; }
                             KeyCode::Enter => { if app.state.selected().is_some() { app.input_mode = InputMode::Details; app.scroll = 0; } }
                             KeyCode::Char('n') => { app.input_mode = InputMode::Editing; app.input_field = InputField::Name; app.editing_watch_index = None; app.name_input.clear(); app.url_input.clear(); app.interval_input.clear(); app.advanced_input.clear(); app.mode_selection = 0; }
                             KeyCode::Char('e') => {
@@ -441,21 +456,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ].as_ref())
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ].as_ref())
-        .split(popup_layout[1])[1]
+    let popup_layout = Layout::default().direction(Direction::Vertical).constraints([Constraint::Percentage((100 - percent_y) / 2), Constraint::Percentage(percent_y), Constraint::Percentage((100 - percent_y) / 2)].as_ref()).split(r);
+    Layout::default().direction(Direction::Horizontal).constraints([Constraint::Percentage((100 - percent_x) / 2), Constraint::Percentage(percent_x), Constraint::Percentage((100 - percent_x) / 2)].as_ref()).split(popup_layout[1])[1]
 }
