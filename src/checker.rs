@@ -139,6 +139,13 @@ pub async fn check_watch(watch: &mut Watch) -> Result<()> {
         if old_val != &extracted_value {
             watch.previous_value = Some(old_val.clone());
             watch.has_unread_change = true;
+            
+            // Trigger system notification
+            let _ = notify_rust::Notification::new()
+                .summary(&format!("Page Changed: {}", watch.name))
+                .body(&format!("New value: {}", if extracted_value.len() > 100 { format!("{}...", &extracted_value[..100]) } else { extracted_value.clone() }))
+                .timeout(notify_rust::Timeout::Never)
+                .show();
         }
     } else {
         watch.has_unread_change = true;
