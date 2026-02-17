@@ -36,6 +36,13 @@ enum InputField {
     Advanced,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum SortColumn {
+    Name,
+    LastChecked,
+    SuccessRate,
+}
+
 use tokio::sync::mpsc;
 
 struct App {
@@ -54,6 +61,8 @@ struct App {
     last_tick: std::time::Instant,
     scroll: u16,
     is_paused: bool,
+    sort_column: SortColumn,
+    sort_ascending: bool,
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
@@ -82,6 +91,8 @@ impl App {
             last_tick: std::time::Instant::now(),
             scroll: 0,
             is_paused: false,
+            sort_column: SortColumn::Name,
+            sort_ascending: true,
             tx,
             rx,
         };
@@ -96,14 +107,34 @@ impl App {
     }
 
     fn filtered_indices(&self) -> Vec<usize> {
-        self.watches.iter().enumerate()
+        let mut indices: Vec<usize> = self.watches.iter().enumerate()
             .filter(|(_, w)| {
                 if self.search_query.is_empty() { return true; }
                 let q = self.search_query.to_lowercase();
                 w.name.to_lowercase().contains(&q) || w.url.to_lowercase().contains(&q)
             })
             .map(|(i, _)| i)
-            .collect()
+            .collect();
+
+        // Apply sorting
+        indices.sort_by(|&a, &b| {
+            let w_a = &self.watches[a];
+            let w_b = &self.watches[b];
+            
+            let cmp = match self.sort_column {
+                SortColumn::Name => w_a.name.to_lowercase().cmp(&w_b.name.to_lowercase()),
+                SortColumn::LastChecked => w_a.last_checked.cmp(&w_b.last_checked),
+                SortColumn::SuccessRate => {
+                    let rate_a = if w_a.total_checks > 0 { w_a.total_successes as f64 / w_a.total_checks as f64 } else { 0.0 };
+                    let rate_b = if w_b.total_checks > 0 { w_b.total_successes as f64 / w_b.total_checks as f64 } else { 0.0 };
+                    rate_a.partial_cmp(&rate_b).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            };
+
+            if self.sort_ascending { cmp } else { cmp.reverse() }
+        });
+
+        indices
     }
 
     fn next(&mut self) {
@@ -269,11 +300,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 ])
             }).collect();
 
-            let table_title = if app.is_paused {
-                format!(" Watches ({}/{}) - PAUSED ", filtered_indices.len(), app.watches.len())
-            } else {
-                format!(" Watches ({}/{}) ", filtered_indices.len(), app.watches.len())
-            };
+            let sort_indicator = if app.sort_ascending { "▲" } else { "▼" };
+            let table_title = format!(
+                " Watches ({}/{}) - Sorting by {:?} {} {} ",
+                filtered_indices.len(),
+                app.watches.len(),
+                app.sort_column,
+                sort_indicator,
+                if app.is_paused { "- PAUSED" } else { "" }
+            );
 
             let table_border_style = if app.is_paused { Style::default().fg(Color::Yellow) } else { Style::default() };
 
@@ -295,8 +330,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             } else {
                 let (text, color) = match app.input_mode {
                     InputMode::Normal => {
-                        let mut t = "Press 'q' to quit, 'n' to add, 'e' to edit, 'c' to check, 'd' to delete, '/' to search, 'p' to ".to_string();
-                        t.push_str(if app.is_paused { "resume" } else { "pause" });
+                        let t = "q:quit n:add e:edit c:check d:del /:search p:pause s:sort".to_string();
                         (t, if app.is_paused { Color::Yellow } else { Color::White })
                     },
                     InputMode::Editing => ("Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(), Color::Yellow),
@@ -382,6 +416,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             KeyCode::Char('q') => return Ok(()),
                             KeyCode::Char('/') => { app.input_mode = InputMode::Search; }
                             KeyCode::Char('p') => { app.is_paused = !app.is_paused; }
+                            KeyCode::Char('s') => {
+                                match app.sort_column {
+                                    SortColumn::Name => app.sort_column = SortColumn::LastChecked,
+                                    SortColumn::LastChecked => app.sort_column = SortColumn::SuccessRate,
+                                    SortColumn::SuccessRate => {
+                                        if app.sort_ascending { app.sort_ascending = false; }
+                                        else { app.sort_column = SortColumn::Name; app.sort_ascending = true; }
+                                    }
+                                }
+                            }
                             KeyCode::Enter => { if app.state.selected().is_some() { app.input_mode = InputMode::Details; app.scroll = 0; } }
                             KeyCode::Char('n') => { app.input_mode = InputMode::Editing; app.input_field = InputField::Name; app.editing_watch_index = None; app.name_input.clear(); app.url_input.clear(); app.interval_input.clear(); app.advanced_input.clear(); app.mode_selection = 0; }
                             KeyCode::Char('e') => {
