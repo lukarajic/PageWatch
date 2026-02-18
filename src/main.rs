@@ -19,6 +19,7 @@ use ratatui::{
     Terminal,
 };
 use std::io::{self, stdout};
+use std::collections::HashSet;
 
 enum InputMode {
     Normal,
@@ -63,6 +64,7 @@ struct App {
     is_paused: bool,
     sort_column: SortColumn,
     sort_ascending: bool,
+    selected_for_bulk: HashSet<uuid::Uuid>, // Use UUID for stable selection across sorts
     tx: mpsc::UnboundedSender<(usize, Watch)>,
     rx: mpsc::UnboundedReceiver<(usize, Watch)>,
 }
@@ -93,6 +95,7 @@ impl App {
             is_paused: false,
             sort_column: SortColumn::Name,
             sort_ascending: true,
+            selected_for_bulk: HashSet::new(),
             tx,
             rx,
         };
@@ -116,11 +119,9 @@ impl App {
             .map(|(i, _)| i)
             .collect();
 
-        // Apply sorting
         indices.sort_by(|&a, &b| {
             let w_a = &self.watches[a];
             let w_b = &self.watches[b];
-            
             let cmp = match self.sort_column {
                 SortColumn::Name => w_a.name.to_lowercase().cmp(&w_b.name.to_lowercase()),
                 SortColumn::LastChecked => w_a.last_checked.cmp(&w_b.last_checked),
@@ -130,10 +131,8 @@ impl App {
                     rate_a.partial_cmp(&rate_b).unwrap_or(std::cmp::Ordering::Equal)
                 }
             };
-
             if self.sort_ascending { cmp } else { cmp.reverse() }
         });
-
         indices
     }
 
@@ -146,9 +145,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        if let Some(&orig_idx) = indices.get(i) {
-            self.watches[orig_idx].has_unread_change = false;
-        }
+        if let Some(&orig_idx) = indices.get(i) { self.watches[orig_idx].has_unread_change = false; }
     }
 
     fn previous(&mut self) {
@@ -160,9 +157,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        if let Some(&orig_idx) = indices.get(i) {
-            self.watches[orig_idx].has_unread_change = false;
-        }
+        if let Some(&orig_idx) = indices.get(i) { self.watches[orig_idx].has_unread_change = false; }
     }
 
     fn submit_watch(&mut self) {
@@ -171,19 +166,15 @@ impl App {
             let mode = match self.mode_selection {
                 1 => TrackingMode::Price { selector: None },
                 2 => TrackingMode::Availability { in_stock_keywords: vec![], out_of_stock_keywords: vec![] },
-                3 => TrackingMode::Keyword { 
-                    keywords: self.advanced_input.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
-                },
+                3 => TrackingMode::Keyword { keywords: self.advanced_input.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect() },
                 4 => TrackingMode::HtmlSection { selector: self.advanced_input.trim().to_string() },
                 _ => TrackingMode::FullPage,
             };
             if let Some(index) = self.editing_watch_index {
                 if index < self.watches.len() {
                     let watch = &mut self.watches[index];
-                    watch.name = self.name_input.clone();
-                    watch.url = self.url_input.clone();
-                    watch.interval_seconds = interval;
-                    watch.mode = mode;
+                    watch.name = self.name_input.clone(); watch.url = self.url_input.clone();
+                    watch.interval_seconds = interval; watch.mode = mode;
                 }
             } else {
                 let mut new_watch = Watch::new(self.name_input.clone(), self.url_input.clone(), mode);
@@ -197,14 +188,9 @@ impl App {
     }
 
     fn reset_input(&mut self) {
-        self.name_input.clear();
-        self.url_input.clear();
-        self.advanced_input.clear();
-        self.interval_input.clear();
-        self.mode_selection = 0;
-        self.editing_watch_index = None;
-        self.input_mode = InputMode::Normal;
-        self.input_field = InputField::Name;
+        self.name_input.clear(); self.url_input.clear(); self.advanced_input.clear(); self.interval_input.clear();
+        self.mode_selection = 0; self.editing_watch_index = None;
+        self.input_mode = InputMode::Normal; self.input_field = InputField::Name;
     }
 }
 
@@ -215,14 +201,11 @@ async fn main() -> Result<()> {
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
     let mut app = App::new();
     let res = run_app(&mut terminal, &mut app).await;
-
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-
     app.save();
     if let Err(err) = res { println!("{:?}", err); }
     Ok(())
@@ -230,9 +213,10 @@ async fn main() -> Result<()> {
 
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
-        while let Ok((idx, watch)) = app.rx.try_recv() {
-            if idx < app.watches.len() { 
-                app.watches[idx] = watch;
+        while let Ok((_idx, watch)) = app.rx.try_recv() {
+            // Find original index by ID since deletion/sorting might have moved things
+            if let Some(pos) = app.watches.iter().position(|w| w.id == watch.id) {
+                app.watches[pos] = watch;
                 app.save();
             }
             app.pending_checks = app.pending_checks.saturating_sub(1);
@@ -254,89 +238,56 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
 
         terminal.draw(|f| {
             let size = f.area();
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(if app.search_query.is_empty() && !matches!(app.input_mode, InputMode::Search) { 0 } else { 3 }),
-                    Constraint::Min(0),
-                    Constraint::Length(3)
-                ].as_ref())
-                .split(size);
+            let chunks = Layout::default().direction(Direction::Vertical).constraints([
+                Constraint::Length(if app.search_query.is_empty() && !matches!(app.input_mode, InputMode::Search) { 0 } else { 3 }),
+                Constraint::Min(0),
+                Constraint::Length(3)
+            ].as_ref()).split(size);
 
             if !app.search_query.is_empty() || matches!(app.input_mode, InputMode::Search) {
-                let search_bar = Paragraph::new(format!(" {}", app.search_query))
-                    .block(Block::default().borders(Borders::ALL).title(" Search ").border_style(if let InputMode::Search = app.input_mode { Style::default().fg(Color::Cyan) } else { Style::default() }));
+                let search_bar = Paragraph::new(format!(" {}", app.search_query)).block(Block::default().borders(Borders::ALL).title(" Search ").border_style(if let InputMode::Search = app.input_mode { Style::default().fg(Color::Cyan) } else { Style::default() }));
                 f.render_widget(search_bar, chunks[0]);
             }
 
             let filtered_indices = app.filtered_indices();
             let rows: Vec<Row> = filtered_indices.iter().map(|&idx| {
                 let w = &app.watches[idx];
-                let name = if w.has_unread_change { format!("● {}", w.name) } else { w.name.clone() };
-                let name_style = if w.has_unread_change { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() };
+                let is_selected = app.selected_for_bulk.contains(&w.id);
+                let selection_mark = if is_selected { " [X] " } else { " [ ] " };
                 
-                let last_success = w.last_success.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_else(|| "Never".to_string());
-                let mode_str = match &w.mode {
-                    TrackingMode::FullPage => "Full Text",
-                    TrackingMode::Price { .. } => "Price",
-                    TrackingMode::Availability { .. } => "Available",
-                    TrackingMode::Keyword { .. } => "Keywords",
-                    TrackingMode::HtmlSection { .. } => "Section",
-                };
+                let name = if w.has_unread_change { format!("● {}", w.name) } else { w.name.clone() };
+                let mut name_style = if w.has_unread_change { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() };
+                if is_selected { name_style = name_style.bg(Color::Rgb(40, 40, 40)); }
 
-                let value_snippet = if let Some(err) = &w.last_error {
-                    format!("Error: {}", err)
-                } else if let Some(val) = &w.last_value {
-                    if val.chars().count() > 30 { format!("{}...", val.chars().take(30).collect::<String>()) } else { val.clone() }
-                } else {
-                    "Pending...".to_string()
-                };
+                let last_success = w.last_success.map(|t| t.format("%H:%M:%S").to_string()).unwrap_or_else(|| "Never".to_string());
+                let mode_str = match &w.mode { TrackingMode::FullPage => "Full Text", TrackingMode::Price { .. } => "Price", TrackingMode::Availability { .. } => "Available", TrackingMode::Keyword { .. } => "Keywords", TrackingMode::HtmlSection { .. } => "Section" };
+                let value_snippet = if let Some(err) = &w.last_error { format!("Error: {}", err) } else if let Some(val) = &w.last_value { if val.chars().count() > 30 { format!("{}...", val.chars().take(30).collect::<String>()) } else { val.clone() } } else { "Pending...".to_string() };
 
                 Row::new(vec![
-                    Cell::from(name).style(name_style),
+                    Cell::from(format!("{}{}", selection_mark, name)).style(name_style),
                     Cell::from(mode_str),
                     Cell::from(last_success),
                     Cell::from(value_snippet),
                 ])
             }).collect();
 
-            let sort_indicator = if app.sort_ascending { "▲" } else { "▼" };
-            let table_title = format!(
-                " Watches ({}/{}) - Sorting by {:?} {} {} ",
-                filtered_indices.len(),
-                app.watches.len(),
-                app.sort_column,
-                sort_indicator,
-                if app.is_paused { "- PAUSED" } else { "" }
-            );
-
-            let table_border_style = if app.is_paused { Style::default().fg(Color::Yellow) } else { Style::default() };
-
-            let table = Table::new(rows, [
-                Constraint::Percentage(25),
-                Constraint::Percentage(15),
-                Constraint::Percentage(15),
-                Constraint::Percentage(45),
-            ])
-            .header(Row::new(vec!["Name", "Mode", "Last Success", "Value"]).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
-            .block(Block::default().borders(Borders::ALL).title(table_title).border_style(table_border_style))
-            .row_highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
+            let table_title = format!(" Watches ({}/{}) - Sort:{:?} {} - Selected:{} ", filtered_indices.len(), app.watches.len(), app.sort_column, if app.sort_ascending { "▲" } else { "▼" }, app.selected_for_bulk.len());
+            let table = Table::new(rows, [Constraint::Percentage(30), Constraint::Percentage(15), Constraint::Percentage(15), Constraint::Percentage(40)])
+                .header(Row::new(vec!["  Name", "Mode", "Last Success", "Value"]).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                .block(Block::default().borders(Borders::ALL).title(table_title).border_style(if app.is_paused { Style::default().fg(Color::Yellow) } else { Style::default() }))
+                .row_highlight_style(Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray));
 
             f.render_stateful_widget(table, chunks[1], &mut app.state);
 
             let status_widget = if app.pending_checks > 0 {
-                let text = format!("Checking {} watch(es)... (UI is responsive)", app.pending_checks);
-                Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(Color::Cyan)))
+                Paragraph::new(format!("Checking {} watch(es)...", app.pending_checks)).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(Color::Cyan)))
             } else {
                 let (text, color) = match app.input_mode {
-                    InputMode::Normal => {
-                        let t = "q:quit n:add e:edit c:check d:del /:search p:pause s:sort".to_string();
-                        (t, if app.is_paused { Color::Yellow } else { Color::White })
-                    },
-                    InputMode::Editing => ("Editing: 'Enter' to next/submit, 'Esc' to cancel.".to_string(), Color::Yellow),
-                    InputMode::Details => ("Details: 'Esc' to go back, 'Up'/'Down' to scroll.".to_string(), Color::Blue),
-                    InputMode::ConfirmDelete => ("Are you sure? 'y' to delete, 'n' to cancel.".to_string(), Color::Red),
-                    InputMode::Search => ("Searching: Type to filter, 'Enter' or 'Esc' to finish.".to_string(), Color::Cyan),
+                    InputMode::Normal => ("Space:select c:check d:del n:add e:edit s:sort p:pause /:search Enter:detail".to_string(), if app.is_paused { Color::Yellow } else { Color::White }),
+                    InputMode::Editing => ("Editing: Enter:next/submit Esc:cancel".to_string(), Color::Yellow),
+                    InputMode::Details => ("Details: Esc:back Up/Down:scroll".to_string(), Color::Blue),
+                    InputMode::ConfirmDelete => (format!("Delete {} selected watch(es)? y:yes n:no", if app.selected_for_bulk.is_empty() { 1 } else { app.selected_for_bulk.len() }), Color::Red),
+                    InputMode::Search => ("Searching: Type to filter, Enter/Esc to finish".to_string(), Color::Cyan),
                 };
                 Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Status").border_style(Style::default().fg(color)))
             };
@@ -345,7 +296,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
             if let InputMode::ConfirmDelete = app.input_mode {
                 let area = centered_rect(40, 20, size); f.render_widget(Clear, area);
                 let block = Block::default().title(" Confirm Delete ").borders(Borders::ALL).border_style(Style::default().fg(Color::Red));
-                let text = vec![Line::from(""), Line::from("  Delete this watch?").alignment(ratatui::layout::Alignment::Center), Line::from(""), Line::from("  (y) Yes  /  (n) No").alignment(ratatui::layout::Alignment::Center)];
+                let count = if app.selected_for_bulk.is_empty() { 1 } else { app.selected_for_bulk.len() };
+                let text = vec![Line::from(""), Line::from(format!("  Delete {} watch(es)?", count)).alignment(ratatui::layout::Alignment::Center), Line::from(""), Line::from("  (y) Yes  /  (n) No").alignment(ratatui::layout::Alignment::Center)];
                 f.render_widget(Paragraph::new(text).block(block), area);
             }
 
@@ -358,26 +310,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             Line::from(vec![Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(&w.url)]),
                             Line::from(vec![Span::styled("Mode: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{:?}", w.mode))]),
                             Line::from(vec![Span::styled("Interval: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} seconds", w.interval_seconds))]),
-                            Line::from(vec![
-                                Span::styled("Stats: ", Style::default().add_modifier(Modifier::BOLD)),
-                                Span::raw(format!("{} checks, {} successes", w.total_checks, w.total_successes)),
-                                Span::raw(if w.total_checks > 0 { format!(" ({:.1}% success rate)", (w.total_successes as f64 / w.total_checks as f64) * 100.0) } else { String::new() }),
-                            ]),
+                            Line::from(vec![Span::styled("Stats: ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(format!("{} checks, {} successes ({:.1}% rate)", w.total_checks, w.total_successes, if w.total_checks > 0 { (w.total_successes as f64 / w.total_checks as f64) * 100.0 } else { 0.0 }))]),
                             Line::from(""), Span::styled("Last Extracted Value:", Style::default().add_modifier(Modifier::BOLD)).into(), Line::from("----------------------"),
                         ];
                         if let Some(val) = &w.last_value { details_text.push(Line::from(val.clone())); } else { details_text.push(Line::from("No data collected yet.")); }
-                        if let Some(err) = &w.last_error {
-                            details_text.push(Line::from(""));
-                            details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into());
-                            details_text.push(Line::from(err.clone()));
-                        }
-                        if !w.error_log.is_empty() {
-                            details_text.push(Line::from(""));
-                            details_text.push(Span::styled("Error History (Last 10):", Style::default().add_modifier(Modifier::BOLD)).into());
-                            for (time, msg) in w.error_log.iter().rev() {
-                                details_text.push(Line::from(format!("  {} - {}", time.format("%H:%M:%S"), msg)));
-                            }
-                        }
+                        if let Some(err) = &w.last_error { details_text.push(Line::from("")); details_text.push(Span::styled("Last Error:", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)).into()); details_text.push(Line::from(err.clone())); }
+                        if !w.error_log.is_empty() { details_text.push(Line::from("")); details_text.push(Span::styled("Error History (Last 10):", Style::default().add_modifier(Modifier::BOLD)).into()); for (time, msg) in w.error_log.iter().rev() { details_text.push(Line::from(format!("  {} - {}", time.format("%H:%M:%S"), msg))); } }
                         f.render_widget(Paragraph::new(details_text).block(Block::default().title(format!(" Details: {} ", w.name)).borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan))).wrap(ratatui::widgets::Wrap { trim: true }).scroll((app.scroll, 0)), area);
                     }
                 }
@@ -387,8 +325,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 let show_advanced = app.mode_selection == 3 || app.mode_selection == 4;
                 let title = if app.editing_watch_index.is_some() { "Edit Watch" } else { "Add New Watch" };
                 let area = centered_rect(60, if show_advanced { 80 } else { 65 }, size);
-                f.render_widget(Clear, area);
-                f.render_widget(Block::default().title(title).borders(Borders::ALL), area);
+                f.render_widget(Clear, area); f.render_widget(Block::default().title(title).borders(Borders::ALL), area);
                 let mut constraints = vec![Constraint::Length(3), Constraint::Length(3), Constraint::Length(3), Constraint::Length(7)];
                 if show_advanced { constraints.push(Constraint::Length(3)); }
                 let popup_chunks = Layout::default().direction(Direction::Vertical).margin(2).constraints(constraints).split(area);
@@ -396,15 +333,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                 f.render_widget(Paragraph::new(app.url_input.clone()).block(Block::default().title("URL").borders(Borders::ALL).style(if let InputField::Url = app.input_field { Style::default().fg(Color::Yellow) } else { Style::default() })), popup_chunks[1]);
                 f.render_widget(Paragraph::new(app.interval_input.clone()).block(Block::default().title("Check Interval (seconds)").borders(Borders::ALL).style(if let InputField::Interval = app.input_field { Style::default().fg(Color::Yellow) } else { Style::default() })), popup_chunks[2]);
                 let modes = vec!["[1] Full page text", "[2] Price", "[3] Availability (in stock / sold out)", "[4] Specific keyword(s)", "[5] HTML section (advanced)"];
-                let mode_items: Vec<ListItem> = modes.iter().enumerate().map(|(i, m)| {
-                    let style = if i == app.mode_selection { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() };
-                    ListItem::new(format!("  {}", m)).style(style)
-                }).collect();
+                let mode_items: Vec<ListItem> = modes.iter().enumerate().map(|(i, m)| { let style = if i == app.mode_selection { Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD) } else { Style::default() }; ListItem::new(format!("  {}", m)).style(style) }).collect();
                 f.render_widget(List::new(mode_items).block(Block::default().title("Tracking Mode").borders(Borders::ALL).style(if let InputField::Mode = app.input_field { Style::default().fg(Color::Yellow) } else { Style::default() })), popup_chunks[3]);
-                if show_advanced {
-                    let adv_title = if app.mode_selection == 3 { "Keywords (comma-separated)" } else { "CSS Selector" };
-                    f.render_widget(Paragraph::new(app.advanced_input.clone()).block(Block::default().title(adv_title).borders(Borders::ALL).style(if let InputField::Advanced = app.input_field { Style::default().fg(Color::Yellow) } else { Style::default() })), popup_chunks[4]);
-                }
+                if show_advanced { let adv_title = if app.mode_selection == 3 { "Keywords (comma-separated)" } else { "CSS Selector" }; f.render_widget(Paragraph::new(app.advanced_input.clone()).block(Block::default().title(adv_title).borders(Borders::ALL).style(if let InputField::Advanced = app.input_field { Style::default().fg(Color::Yellow) } else { Style::default() })), popup_chunks[4]); }
             }
         })?;
 
@@ -416,14 +347,21 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                             KeyCode::Char('q') => return Ok(()),
                             KeyCode::Char('/') => { app.input_mode = InputMode::Search; }
                             KeyCode::Char('p') => { app.is_paused = !app.is_paused; }
+                            KeyCode::Char(' ') => {
+                                let indices = app.filtered_indices();
+                                if let Some(i) = app.state.selected() {
+                                    if let Some(&orig_idx) = indices.get(i) {
+                                        let id = app.watches[orig_idx].id;
+                                        if app.selected_for_bulk.contains(&id) { app.selected_for_bulk.remove(&id); }
+                                        else { app.selected_for_bulk.insert(id); }
+                                    }
+                                }
+                            }
                             KeyCode::Char('s') => {
                                 match app.sort_column {
                                     SortColumn::Name => app.sort_column = SortColumn::LastChecked,
                                     SortColumn::LastChecked => app.sort_column = SortColumn::SuccessRate,
-                                    SortColumn::SuccessRate => {
-                                        if app.sort_ascending { app.sort_ascending = false; }
-                                        else { app.sort_column = SortColumn::Name; app.sort_ascending = true; }
-                                    }
+                                    SortColumn::SuccessRate => { if app.sort_ascending { app.sort_ascending = false; } else { app.sort_column = SortColumn::Name; app.sort_ascending = true; } }
                                 }
                             }
                             KeyCode::Enter => { if app.state.selected().is_some() { app.input_mode = InputMode::Details; app.scroll = 0; } }
@@ -441,17 +379,21 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                                 }
                             }
                             KeyCode::Char('c') => {
-                                let indices = app.filtered_indices();
-                                if let Some(i) = app.state.selected() {
-                                    if let Some(&orig_idx) = indices.get(i) {
+                                let target_ids = if app.selected_for_bulk.is_empty() {
+                                    let indices = app.filtered_indices();
+                                    if let Some(i) = app.state.selected() { indices.get(i).map(|&idx| vec![app.watches[idx].id]).unwrap_or_default() } else { vec![] }
+                                } else { app.selected_for_bulk.iter().cloned().collect() };
+
+                                for id in target_ids {
+                                    if let Some(pos) = app.watches.iter().position(|w| w.id == id) {
                                         app.pending_checks += 1;
-                                        let mut watch_clone = app.watches[orig_idx].clone();
+                                        let mut watch_clone = app.watches[pos].clone();
                                         let tx = app.tx.clone();
-                                        tokio::spawn(async move { let _ = checker::check_watch(&mut watch_clone).await; let _ = tx.send((orig_idx, watch_clone)); });
+                                        tokio::spawn(async move { let _ = checker::check_watch(&mut watch_clone).await; let _ = tx.send((pos, watch_clone)); });
                                     }
                                 }
                             }
-                            KeyCode::Char('d') => { if app.state.selected().is_some() { app.input_mode = InputMode::ConfirmDelete; } }
+                            KeyCode::Char('d') => { if app.state.selected().is_some() || !app.selected_for_bulk.is_empty() { app.input_mode = InputMode::ConfirmDelete; } }
                             KeyCode::Down => app.next(), KeyCode::Up => app.previous(), _ => {}
                         },
                         InputMode::Search => match key.code {
@@ -462,15 +404,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mu
                         },
                         InputMode::ConfirmDelete => match key.code {
                             KeyCode::Char('y') | KeyCode::Enter => {
-                                let indices = app.filtered_indices();
-                                if let Some(i) = app.state.selected() {
-                                    if let Some(&orig_idx) = indices.get(i) {
-                                        app.watches.remove(orig_idx); app.save();
-                                        let new_indices = app.filtered_indices();
-                                        if new_indices.is_empty() { app.state.select(None); }
-                                        else { app.state.select(Some(0)); }
-                                    }
-                                }
+                                let target_ids: HashSet<uuid::Uuid> = if app.selected_for_bulk.is_empty() {
+                                    let indices = app.filtered_indices();
+                                    if let Some(i) = app.state.selected() { indices.get(i).map(|&idx| [app.watches[idx].id].into_iter().collect()).unwrap_or_default() } else { HashSet::new() }
+                                } else { app.selected_for_bulk.clone() };
+
+                                app.watches.retain(|w| !target_ids.contains(&w.id));
+                                app.selected_for_bulk.clear();
+                                app.save();
+                                app.state.select(if app.watches.is_empty() { None } else { Some(0) });
                                 app.input_mode = InputMode::Normal;
                             }
                             KeyCode::Char('n') | KeyCode::Esc => { app.input_mode = InputMode::Normal; }
